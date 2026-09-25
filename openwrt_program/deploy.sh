@@ -502,29 +502,29 @@ return view.extend({
 		var actions = [];
 
 		if (!dev.online) {
-			var checkBtn = E('button', { 'class': 'cbi-button' }, 'Check connection');
+			var checkBtn = E('button', { 'class': 'cbi-button', 'title': 'Try to reach this device right now and refresh its status' }, 'Check connection');
 			checkBtn.addEventListener('click', function () { self.runCommand(dev.mac, 'check', checkBtn); });
 			actions.push(checkBtn);
 		} else if (dev.pc_status === 'off') {
-			var onBtn = E('button', { 'class': 'cbi-button cbi-button-apply' }, 'Power On');
+			var onBtn = E('button', { 'class': 'cbi-button cbi-button-apply', 'title': 'Short press of the power button - turns the PC on' }, 'Power On');
 			onBtn.addEventListener('click', function () {
 				if (window.confirm('Power on ' + (dev.name || dev.mac) + '?')) self.runCommand(dev.mac, 'power_on', onBtn);
 			});
 			actions.push(onBtn);
 		} else if (dev.pc_status === 'on') {
-			var sleepBtn = E('button', { 'class': 'cbi-button' }, 'Off / Sleep');
+			var sleepBtn = E('button', { 'class': 'cbi-button', 'title': 'Short press of the power button while PC is on - result depends on PC power settings (sleep or shutdown)' }, 'Off / Sleep');
 			sleepBtn.disabled = !!dev.power_blocked;
 			if (dev.power_blocked) sleepBtn.title = 'Blocked for a bit right after power-on';
 			sleepBtn.addEventListener('click', function () { self.runCommand(dev.mac, 'power_on', sleepBtn); });
 			actions.push(sleepBtn, ' ');
 
-			var offBtn = E('button', { 'class': 'cbi-button cbi-button-reset' }, 'Force Off');
+			var offBtn = E('button', { 'class': 'cbi-button cbi-button-reset', 'title': 'Long press of the power button - forces the PC off regardless of OS state' }, 'Force Off');
 			offBtn.addEventListener('click', function () {
 				if (window.confirm('Force power off the PC?')) self.runCommand(dev.mac, 'power_off', offBtn);
 			});
 			actions.push(offBtn, ' ');
 
-			var resetBtn = E('button', { 'class': 'cbi-button' }, 'Reset');
+			var resetBtn = E('button', { 'class': 'cbi-button', 'title': 'Short press of the reset button' }, 'Reset');
 			resetBtn.addEventListener('click', function () {
 				if (window.confirm('Reset the PC?')) self.runCommand(dev.mac, 'reset', resetBtn);
 			});
@@ -644,7 +644,29 @@ return view.extend({
 
 		return E('div', {}, [
 			style,
-			E('h2', {}, 'ESPtoPC Wireless Remote Switch'),
+			E('div', { 'style': 'display:flex;align-items:center;gap:12px' }, [
+				E('h2', { 'style': 'margin:0' }, 'ESPtoPC Wireless Remote Switch'),
+				(function () {
+					var helpBtn = E('button', { 'class': 'cbi-button' }, 'Help');
+					helpBtn.addEventListener('click', function () {
+						window.alert(
+							'How this works:\n\n' +
+							'Each device is a small ESP-01 board wired to a PC\'s power/reset ' +
+							'header, reachable over WiFi. It reports whether the PC is on/off and ' +
+							'accepts power/reset commands.\n\n' +
+							'For a device to show up and work here:\n' +
+							'- The board must be powered and connected to this network\n' +
+							'- It announces itself automatically once online (see the yellow box ' +
+							'above the table, if present) - add it with a name to start using it\n' +
+							'- If a device shows Offline, use "Check connection" - if that fails, ' +
+							'the board itself is unreachable (power/WiFi on its end)\n\n' +
+							'Full build instructions, firmware and hardware files:\n' +
+							'https://github.com/steelpuxnastik/ESPtoPC_Wireless_Remote_Switch'
+						);
+					});
+					return helpBtn;
+				})()
+			]),
 			self.renderPending(pending, clients),
 			tableWrap,
 			E('div', { 'style': 'margin-top:1em' }, [picker, ' ', macInput, ' ', nameInput, ' ', addBtn])
@@ -767,6 +789,7 @@ t() {
 		en:action_lang) echo "Change language (current: $LANG_CODE)" ;;
 		ru:action_lang) echo "Сменить язык (сейчас: $LANG_CODE)" ;;
 		uk:action_lang) echo "Змінити мову (зараз: $LANG_CODE)" ;;
+		en:action_help) echo "Help" ;;           ru:action_help) echo "Справка" ;;            uk:action_help) echo "Довідка" ;;
 		en:blocked) echo "blocked for now" ;;        ru:blocked) echo "пока заблокировано" ;;     uk:blocked) echo "поки заблоковано" ;;
 		en:msg_reconnecting) echo "Device looks offline, trying to reconnect..." ;;
 		ru:msg_reconnecting) echo "Устройство не на связи, пробую переподключиться..." ;;
@@ -933,6 +956,7 @@ cmd_menu() {
 			echo "  $(t msg_no_devices)"
 		fi
 		echo "  L) $(t action_lang)"
+		echo "  H) $(t action_help)"
 		echo "  0) $(t action_exit)"
 		printf "> "
 		read choice
@@ -942,6 +966,11 @@ cmd_menu() {
 		fi
 		if [ "$choice" = "L" ] || [ "$choice" = "l" ]; then
 			cmd_lang
+			rm -f "$tmp"
+			continue
+		fi
+		if [ "$choice" = "H" ] || [ "$choice" = "h" ]; then
+			cmd_help
 			rm -f "$tmp"
 			continue
 		fi
@@ -989,6 +1018,62 @@ cmd_menu() {
 	done
 }
 
+cmd_help() {
+	case "$LANG_CODE" in
+		ru)
+			cat << 'HELP_RU'
+ESPtoPC Wireless Remote Switch - CLI
+
+  esptopcrsw                     интерактивное меню (устройство -> действие)
+  esptopcrsw list                 таблица устройств с текущим статусом
+  esptopcrsw poweron <имя>        включить (или усыпить, если ПК уже включен)
+  esptopcrsw off <имя>            принудительно выключить
+  esptopcrsw reset <имя>          перезагрузить
+  esptopcrsw check <имя>          проверить/восстановить связь с устройством
+  esptopcrsw lang [en|ru|uk]      показать или сменить язык интерфейса
+  esptopcrsw help                 эта справка
+
+<имя> - как задано в LuCI при добавлении устройства (или сам MAC-адрес).
+poweron/off/reset спрашивают подтверждение (y/N), прежде чем что-либо делать.
+HELP_RU
+			;;
+		uk)
+			cat << 'HELP_UK'
+ESPtoPC Wireless Remote Switch - CLI
+
+  esptopcrsw                     інтерактивне меню (пристрій -> дія)
+  esptopcrsw list                 таблиця пристроїв з поточним статусом
+  esptopcrsw poweron <ім'я>       увімкнути (або приспати, якщо ПК вже увімкнено)
+  esptopcrsw off <ім'я>           примусово вимкнути
+  esptopcrsw reset <ім'я>         перезавантажити
+  esptopcrsw check <ім'я>         перевірити/відновити зв'язок з пристроєм
+  esptopcrsw lang [en|ru|uk]      показати або змінити мову інтерфейсу
+  esptopcrsw help                 ця довідка
+
+<ім'я> - як задано в LuCI при додаванні пристрою (або сам MAC-адреса).
+poweron/off/reset питають підтвердження (y/N), перш ніж щось робити.
+HELP_UK
+			;;
+		*)
+			cat << 'HELP_EN'
+ESPtoPC Wireless Remote Switch - CLI
+
+  esptopcrsw                     interactive menu (pick device, then action)
+  esptopcrsw list                 table of devices with live status
+  esptopcrsw poweron <name>       power on (or sleep, if PC already on)
+  esptopcrsw off <name>           force power off
+  esptopcrsw reset <name>         reset
+  esptopcrsw check <name>         check/restore connection to a device
+  esptopcrsw lang [en|ru|uk]      show or change interface language
+  esptopcrsw help                 this text
+
+<name> is whatever you named the device in LuCI (or its MAC address).
+poweron/off/reset ask for a y/N confirmation before doing anything.
+HELP_EN
+			;;
+	esac
+}
+
 case "$1" in
 	list) cmd_list ;;
 	poweron) run_action "$2" power_on ;;
@@ -996,9 +1081,11 @@ case "$1" in
 	reset) run_action "$2" reset ;;
 	check) run_action "$2" check ;;
 	lang) shift; cmd_lang "$@" ;;
+	help|-h|--help) cmd_help ;;
 	"") cmd_menu ;;
 	*)
-		echo "Usage: esptopcrsw [list|poweron <name>|off <name>|reset <name>|check <name>|lang [en|ru|uk]]"
+		echo "Unknown command: $1"
+		cmd_help
 		;;
 esac
 CLI_EOF
