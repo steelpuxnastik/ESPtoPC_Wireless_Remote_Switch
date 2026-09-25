@@ -1,0 +1,6 @@
+*.swp
+*-bak
+*.bak
+*.bck
+github-cache/
+*-backups/
