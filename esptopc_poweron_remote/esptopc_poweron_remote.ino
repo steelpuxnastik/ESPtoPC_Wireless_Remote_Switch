@@ -40,14 +40,16 @@ const uint8_t PIN_PC_STATUS = 2; // вход статуса ПК (LOW = ON)
 // ---- OpenWrt: хендшейк/heartbeat ----
 const uint16_t OPENWRT_PORT = 8090;      // порт программы на роутере (сверим при написании OpenWrt-части)
 const char* OPENWRT_PATH = "/cgi-bin/announce";  // единая точка приёма хендшейка/heartbeat
-const char* DEVICE_PASSWORD = "poweron-esp01"; // просто метка "свой", не секрет
+const char* DEVICE_PASSWORD = "poweron-esp01"; // общий пароль: метка в хендшейке + основа ключа команд md5(MAC:пароль); совпадает с uci get esptopcrsw.settings.password
 const uint16_t HTTP_PORT = 80;           // наш собственный порт (для информации роутеру)
 
 const uint32_t HANDSHAKE_INTERVAL_MS = 10000;  // пока не зарегистрированы - раз в 10с
 const uint32_t HEARTBEAT_INTERVAL_MS = 90000;  // после регистрации - раз в 1.5 мин
+const uint32_t WIFI_RETRY_MS = 30000;          // нет WiFi (роутер ещё не поднялся) - повторное подключение раз в 30с
 
 bool registeredWithOpenWrt = false;
 uint32_t lastAnnounceMs = 0;
+uint32_t lastWifiRetryMs = 0;
 
 // ---- Тайминги нажатий (мс) ----
 // Это стартовые/безопасные значения (в т.ч. по ATX-спеке: >=4с на
@@ -138,8 +140,13 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
+  lastWifiRetryMs = millis();
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500); // без Serial - просто ждём, ретраи бесконечны
+    delay(200); // без Serial - просто ждём, ретраи бесконечны
+    if (millis() - lastWifiRetryMs >= WIFI_RETRY_MS) {
+      lastWifiRetryMs = millis();
+      WiFi.begin(WIFI_SSID, WIFI_PASS); // роутер ещё не поднялся - пробуем снова
+    }
   }
 
   server.on("/power/on", HTTP_GET, handlePowerOn);
@@ -156,8 +163,11 @@ void loop() {
   // дольше необходимого (begin() сам по себе не блокирующий).
   if (WiFi.status() != WL_CONNECTED) {
     registeredWithOpenWrt = false; // при обрыве WiFi - хендшейк заново
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    delay(1000);
+    if (millis() - lastWifiRetryMs >= WIFI_RETRY_MS) {
+      lastWifiRetryMs = millis();
+      WiFi.begin(WIFI_SSID, WIFI_PASS);
+    }
+    delay(100);
     return; // нет смысла стучаться в OpenWrt без WiFi
   }
 

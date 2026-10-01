@@ -26,7 +26,7 @@ cat > /usr/share/rpcd/acl.d/luci-app-esptopcrsw.json << 'ACL_EOF'
 			"uci": [ "esptopcrsw" ]
 		},
 		"write": {
-			"ubus": { "esptopcrsw": [ "list", "dhcp_clients", "pending_devices", "add_device", "rename_device", "remove_device", "command" ] },
+			"ubus": { "esptopcrsw": [ "list", "dhcp_clients", "pending_devices", "dismiss_pending", "add_device", "rename_device", "remove_device", "command" ] },
 			"uci": [ "esptopcrsw" ]
 		}
 	}
@@ -91,7 +91,6 @@ command_key() {
 
 resolve_ip() {
 	mac_lower="$(echo "$1" | tr 'A-Z' 'a-z')"
-	mac_lower="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
 	awk -v m="$mac_lower" 'tolower($2)==m {print $3}' /tmp/dhcp.leases 2>/dev/null | tail -n1
 }
 
@@ -113,8 +112,9 @@ update_status_cache() {
 	local mac="$1" status="$2" prev f
 	f="$(status_file "$mac")"
 	prev="$(cat "$f" 2>/dev/null)"
+	[ "$status" = "unknown" ] && return 0
 	echo "$status" > "$f"
-	if [ "$status" = "on" ] && [ "$prev" != "on" ]; then
+	if [ "$status" = "on" ] && [ "$prev" = "off" ]; then
 		date +%s > "$(onsince_file "$mac")"
 	fi
 	if [ "$status" != "on" ]; then
@@ -153,6 +153,9 @@ rpc_list() {
 	json_add_object "list"; json_close_object
 	json_add_object "dhcp_clients"; json_close_object
 	json_add_object "pending_devices"; json_close_object
+	json_add_object "dismiss_pending"
+	json_add_string "mac" ""
+	json_close_object
 	json_add_object "add_device"
 	json_add_string "mac" ""
 	json_add_string "name" ""
@@ -252,6 +255,19 @@ call_pending_devices() {
 	done
 
 	json_close_array
+	json_dump
+}
+
+call_dismiss_pending() {
+	local mac
+	json_load "$(cat)"
+	json_get_var mac mac
+	case "$mac" in
+		*[!0-9A-Fa-f:]*|"") echo '{"error":"bad mac"}'; return 1 ;;
+	esac
+	rm -f "$(seen_file "$mac")" "$(status_file "$mac")" "$(onsince_file "$mac")"
+	json_init
+	json_add_boolean "ok" 1
 	json_dump
 }
 
@@ -403,6 +419,7 @@ case "$1" in
 			list)          call_list ;;
 			dhcp_clients)  call_dhcp_clients ;;
 			pending_devices) call_pending_devices ;;
+			dismiss_pending) call_dismiss_pending ;;
 			add_device)    call_add_device ;;
 			rename_device) call_rename_device ;;
 			remove_device) call_remove_device ;;
@@ -439,6 +456,12 @@ var callPending = rpc.declare({
 	object: 'esptopcrsw',
 	method: 'pending_devices',
 	expect: { pending: [] }
+});
+
+var callDismiss = rpc.declare({
+	object: 'esptopcrsw',
+	method: 'dismiss_pending',
+	params: ['mac']
 });
 
 var callAdd = rpc.declare({
@@ -546,8 +569,10 @@ return view.extend({
 
 		return E('tr', {}, [
 			E('td', {}, dev.name || dev.mac),
-			E('td', {}, dev.mac),
-			E('td', {}, dev.ip || '-'),
+			E('td', {}, [
+				E('div', {}, dev.mac),
+				dev.ip ? E('div', { 'style': 'color:#888;font-size:0.9em' }, dev.ip) : ''
+			]),
 			E('td', {}, status),
 			E('td', {}, actions),
 			E('td', {}, [renameBtn, ' ', removeBtn])
@@ -559,8 +584,7 @@ return view.extend({
 		var table = E('table', { 'class': 'table', 'id': 'esptopcrsw-table' }, [
 			E('tr', { 'class': 'tr-table-title' }, [
 				E('th', {}, 'Name'),
-				E('th', {}, 'MAC'),
-				E('th', {}, 'IP'),
+				E('th', {}, 'MAC / IP'),
 				E('th', {}, 'Status'),
 				E('th', {}, 'Commands'),
 				E('th', {}, 'Manage')
@@ -588,9 +612,13 @@ return view.extend({
 			addBtn.addEventListener('click', function () {
 				callAdd(p.mac, nameInput.value).then(function () { location.reload(); });
 			});
+			var dismissBtn = E('button', { 'class': 'cbi-button', 'title': 'Hide this until the board announces itself again' }, 'Dismiss');
+			dismissBtn.addEventListener('click', function () {
+				callDismiss(p.mac).then(function () { location.reload(); });
+			});
 			box.appendChild(E('div', { 'style': 'margin-top:6px' }, [
 				p.mac + (p.ip ? ' (' + p.ip + ')' : '') + '  ',
-				nameInput, ' ', addBtn
+				nameInput, ' ', addBtn, ' ', dismissBtn
 			]));
 		});
 
@@ -651,11 +679,11 @@ return view.extend({
 					helpBtn.addEventListener('click', function () {
 						window.alert(
 							'How this works:\n\n' +
-							'Each device is a small ESP-01 board wired to a PC\'s power/reset ' +
+							'Each device is a small ESP-01 board  wired to a PC\'s power/reset ' +
 							'header, reachable over WiFi. It reports whether the PC is on/off and ' +
 							'accepts power/reset commands.\n\n' +
 							'For a device to show up and work here:\n' +
-							'- The board must be powered and connected to this network\n' +
+							'- The board must be properly wired to PC, powered and connected to this network\n' +
 							'- It announces itself automatically once online (see the yellow box ' +
 							'above the table, if present) - add it with a name to start using it\n' +
 							'- If a device shows Offline, use "Check connection" - if that fails, ' +
@@ -688,8 +716,8 @@ fi
 /etc/init.d/rpcd restart
 rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
 
-mkdir -p /www-pcremote/cgi-bin
-cat > /www-pcremote/cgi-bin/announce << 'ANNOUNCE_EOF'
+mkdir -p /www-esptopcrsw/cgi-bin
+cat > /www-esptopcrsw/cgi-bin/announce << 'ANNOUNCE_EOF'
 #!/usr/bin/lua
 -- Принимает POST {"mac":"...","password":"...","port":80} от ESP.
 -- Пишет last_seen+port в /tmp (RAM) - не трогаем flash на каждый heartbeat.
@@ -721,8 +749,13 @@ if data.password ~= expected_password then
 	return
 end
 
-local mac = string.upper(data.mac)
-local port = tostring(data.port or 80)
+local mac = string.upper(tostring(data.mac))
+if not mac:match("^%x%x:%x%x:%x%x:%x%x:%x%x:%x%x$") then
+	reply(400, "Bad Request", "bad mac")
+	return
+end
+local port = math.floor(tonumber(data.port) or 80)
+if port < 1 or port > 65535 then port = 80 end
 local filename = "/tmp/esptopcrsw/" .. mac:gsub(":", "-") .. ".seen"
 
 os.execute("mkdir -p /tmp/esptopcrsw")
@@ -734,13 +767,13 @@ end
 
 reply(200, "OK", "welcome")
 ANNOUNCE_EOF
-chmod +x /www-pcremote/cgi-bin/announce
+chmod +x /www-esptopcrsw/cgi-bin/announce
 
-uci -q delete uhttpd.pcremote 2>/dev/null || true
-uci set uhttpd.pcremote='uhttpd'
-uci set uhttpd.pcremote.listen_http='0.0.0.0:8090'
-uci set uhttpd.pcremote.home='/www-pcremote'
-uci set uhttpd.pcremote.cgi_prefix='/cgi-bin'
+uci -q delete uhttpd.esptopcrsw 2>/dev/null || true
+uci set uhttpd.esptopcrsw='uhttpd'
+uci set uhttpd.esptopcrsw.listen_http='0.0.0.0:8090'
+uci set uhttpd.esptopcrsw.home='/www-esptopcrsw'
+uci set uhttpd.esptopcrsw.cgi_prefix='/cgi-bin'
 uci commit uhttpd
 /etc/init.d/uhttpd restart
 
@@ -851,7 +884,6 @@ find_device_line() {
 	list_devices | while IFS='|' read -r mac dname online status blocked ip; do
 		lname="$(echo "$dname" | tr 'A-Z' 'a-z')"
 		lmac="$(echo "$mac" | tr 'A-Z' 'a-z')"
-		lmac="$(echo "$mac" | tr '[:upper:]' '[:lower:]')"
 		if [ "$lname" = "$lower_wanted" ] || [ "$lmac" = "$lower_wanted" ]; then
 			echo "$mac|$dname|$online|$status|$blocked|$ip"
 			break
