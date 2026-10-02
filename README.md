@@ -160,4 +160,6 @@ There's no login/password on the ESP's HTTP server itself — instead:
 - The rpcd/JS/LuCI layer was written against documented conventions for modern OpenWrt (menu.d/acl.d JSON, JS views over ubus) but hasn't been exhaustively tested beyond this one setup — if something in LuCI breaks after an OpenWrt upgrade, that's the first place to look.
 - `busybox tr` on some builds doesn't support POSIX character classes (`[:lower:]`/`[:upper:]`) — the scripts here use explicit ranges (`a-z`/`A-Z`) everywhere for that reason; keep that in mind if you extend them.
 - MAC addresses are stored/compared uppercase throughout, to avoid the same device getting registered twice under different casing.
-- The Power-button lockout (the Off / Sleep button is disabled for about 60 seconds after the PC turns on) starts when the router notices the switch from off to on. The router doesn't poll in the background, so if nobody had the page or CLI open at that moment, the countdown starts when you next look.
+
+## To-Do-List
+- If problems with ESP bootloop while PC is turned on will be found, change LED+ line from GPIO2 to GPIO1, and BTN_ON from GPIO1 to GPIO2.
