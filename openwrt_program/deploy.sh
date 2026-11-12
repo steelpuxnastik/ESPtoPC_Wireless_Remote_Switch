@@ -946,7 +946,7 @@ hold_label() {
 
 action_label() {
 	case "$1" in
-		power_on) t action_poweron ;;
+		power_on) if [ "$2" = "on" ]; then t action_poweron_sleep; else t action_poweron; fi ;;
 		power_hold) hold_label ;;
 		power_off) t action_off ;;
 		reset) t action_reset ;;
@@ -956,7 +956,7 @@ action_label() {
 
 # run_action_by_mac MAC NAME ONLINE ACTION: reconnect if offline, confirm, run
 run_action_by_mac() {
-	local mac="$1" dname="$2" online="$3" action="$4" res err confirm
+	local mac="$1" dname="$2" online="$3" action="$4" pcstatus="$5" res err confirm
 
 	if [ "$online" != "true" ]; then
 		echo "$(t msg_reconnecting)"
@@ -970,7 +970,7 @@ run_action_by_mac() {
 
 	[ "$action" = "check" ] && return 0
 
-	printf "%s: %s -> %s? [y/N] " "$(t confirm_action)" "$dname" "$(action_label "$action")"
+	printf "%s: %s -> %s? [y/N] " "$(t confirm_action)" "$dname" "$(action_label "$action" "$pcstatus")"
 	read -r confirm
 	case "$confirm" in
 		y|Y|yes|Yes) ;;
@@ -996,7 +996,7 @@ run_action() {
 		echo "$(t msg_not_found): $1"
 		return 1
 	fi
-	run_action_by_mac "$(line_field "$line" 1)" "$(line_field "$line" 2)" "$(line_field "$line" 3)" "$2"
+	run_action_by_mac "$(line_field "$line" 1)" "$(line_field "$line" 2)" "$(line_field "$line" 3)" "$2" "$(line_field "$line" 4)"
 }
 
 # ------------------------------------------------------------------ commands
@@ -1067,7 +1067,7 @@ device_menu() {
 		echo "$(t msg_invalid_choice)"
 		return
 	fi
-	run_action_by_mac "$mac" "$dname" "$online" "$action"
+	run_action_by_mac "$mac" "$dname" "$online" "$action" "$status"
 }
 
 cmd_menu() {
