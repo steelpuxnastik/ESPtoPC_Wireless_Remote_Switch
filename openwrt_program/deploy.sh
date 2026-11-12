@@ -32,11 +32,11 @@ cat > /usr/share/rpcd/acl.d/luci-app-esptopcrsw.json << 'ACL_EOF'
 	"luci-app-esptopcrsw": {
 		"description": "Access to ESPtoPC Wireless Remote Switch devices",
 		"read": {
-			"ubus": { "esptopcrsw": [ "list", "dhcp_clients", "pending_devices" ] },
+			"ubus": { "esptopcrsw": [ "list", "dhcp_clients", "pending_devices", "get_settings" ] },
 			"uci": [ "esptopcrsw" ]
 		},
 		"write": {
-			"ubus": { "esptopcrsw": [ "list", "dhcp_clients", "pending_devices", "dismiss_pending", "add_device", "rename_device", "remove_device", "command" ] },
+			"ubus": { "esptopcrsw": [ "list", "dhcp_clients", "pending_devices", "dismiss_pending", "add_device", "rename_device", "remove_device", "command", "get_settings", "set_settings" ] },
 			"uci": [ "esptopcrsw" ]
 		}
 	}
@@ -75,6 +75,17 @@ reply_ok()  { json_init; json_add_boolean "ok" 1; json_dump; }
 
 # UCI "settings" section (call config_load first): setting NAME DEFAULT
 setting() { local v; config_get v settings "$1" "$2"; echo "$v"; }
+
+# How long "power_hold" holds the Power button, ms (UCI soft_off_ms, default 4500, clamped to 500..10000).
+# For BIOS "Soft-Off by PWR-BTN = Delay 4 Sec" (Gigabyte): hold time = BIOS delay + a margin.
+hold_ms() {
+	local v
+	v="$(setting soft_off_ms 4500)"
+	case "$v" in ''|*[!0-9]*) v=4500 ;; esac
+	[ "$v" -lt 500 ] && v=500
+	[ "$v" -gt 10000 ] && v=10000
+	echo "$v"
+}
 
 # ------------------------------------------------------------------ per-device state (RAM)
 
@@ -137,12 +148,13 @@ resolve_ip() {
 	awk -v m="$mac_lower" 'tolower($2)==m {print $3}' /tmp/dhcp.leases 2>/dev/null | tail -n1
 }
 
-# device_get MAC PATH TIMEOUT: GET http://<device>PATH, prints the body (empty on failure)
+# device_get MAC PATH TIMEOUT: GET http://<device>PATH (+ command key), prints the body (empty on failure)
 device_get() {
-	local ip
+	local ip sep="?"
 	ip="$(resolve_ip "$1")"
 	[ -n "$ip" ] || return 1
-	uclient-fetch -q -T "$3" -O - "http://$ip:$(device_port "$1")$2?key=$(command_key "$1")" 2>/dev/null
+	case "$2" in *\?*) sep="&" ;; esac
+	uclient-fetch -q -T "$3" -O - "http://$ip:$(device_port "$1")$2${sep}key=$(command_key "$1")" 2>/dev/null
 }
 
 # fetch_status MAC [TIMEOUT=3] [TRIES=1] -> on | off | unknown
@@ -196,14 +208,17 @@ rpc_list() {
 	decl rename_device mac name
 	decl remove_device mac
 	decl command mac action
+	decl get_settings
+	decl set_settings soft_off_ms
 	json_dump
 }
 
 call_list() {
-	local timeout window
+	local timeout window hold
 	config_load esptopcrsw
 	timeout="$(setting offline_timeout 300)"
 	window="$(setting power_block_after_on 60)"
+	hold="$(hold_ms)"
 
 	json_init
 	json_add_array "devices"
@@ -238,6 +253,7 @@ call_list() {
 		json_add_boolean "online" "$online"
 		json_add_string "pc_status" "$status"
 		json_add_boolean "power_blocked" "$blocked"
+		json_add_int "soft_off_ms" "$hold"
 		json_close_object
 	}
 	config_foreach list_one device
@@ -334,8 +350,26 @@ call_remove_device() {
 	reply_ok
 }
 
+call_get_settings() {
+	config_load esptopcrsw
+	json_init
+	json_add_int "soft_off_ms" "$(hold_ms)"
+	json_dump
+}
+
+call_set_settings() {
+	local v
+	read_args
+	json_get_var v soft_off_ms
+	case "$v" in ''|*[!0-9]*) fail "number required (500-10000)"; return 1 ;; esac
+	{ [ "$v" -ge 500 ] && [ "$v" -le 10000 ]; } || { fail "allowed range: 0.5-10 s"; return 1; }
+	uci set "esptopcrsw.settings.soft_off_ms=$v"
+	uci commit esptopcrsw
+	reply_ok
+}
+
 call_command() {
-	local mac action timeout window status url resp
+	local mac action timeout window status url resp hold tmo=10
 
 	read_args
 	json_get_var mac mac
@@ -373,6 +407,13 @@ call_command() {
 			fi
 			url="/power/on"
 			;;
+		power_hold)
+			# not blocked after power-on: holding the button is a deliberate action
+			[ "$status" = "on" ] || { fail "PC is already off"; return 1; }
+			hold="$(hold_ms)"
+			url="/power/hold?ms=$hold"
+			tmo=$((hold / 1000 + 6))
+			;;
 		power_off)
 			[ "$status" = "on" ] || { fail "PC is already off"; return 1; }
 			url="/power/off"
@@ -386,8 +427,8 @@ call_command() {
 			;;
 	esac
 
-	# power_off holds the button for 5 s and replies afterwards -> 10 s timeout
-	resp="$(device_get "$mac" "$url" 10)"
+	# power_off / power_hold keep the button pressed and reply afterwards -> wait for them plus a margin
+	resp="$(device_get "$mac" "$url" "$tmo")"
 	[ -n "$resp" ] || { fail "device did not confirm the command"; return 1; }
 
 	json_init
@@ -410,6 +451,8 @@ case "$1" in
 			rename_device)   call_rename_device ;;
 			remove_device)   call_remove_device ;;
 			command)         call_command ;;
+			get_settings)    call_get_settings ;;
+			set_settings)    call_set_settings ;;
 			*) fail "method not found"; exit 1 ;;
 		esac
 		;;
@@ -472,6 +515,8 @@ var callAdd         = declare('add_device', ['mac', 'name']);
 var callRename      = declare('rename_device', ['mac', 'name']);
 var callRemove      = declare('remove_device', ['mac']);
 var callCommand     = declare('command', ['mac', 'action']);
+var callGetSettings = declare('get_settings');
+var callSetSettings = declare('set_settings', ['soft_off_ms']);
 
 function reload() { location.reload(); }
 
@@ -546,8 +591,12 @@ return view.extend({
 				sleepBtn.disabled = true;
 				sleepBtn.title = 'Blocked for a bit right after power-on';
 			}
+			var holdLabel = 'Soft-Off' + (dev.soft_off_ms ? ' (' + (dev.soft_off_ms / 1000) + ' s)' : '');
 			return [
 				sleepBtn, ' ',
+				button(holdLabel, '', 'Holds the power button for the "soft-off delay" set in BIOS ' +
+					'(Gigabyte: Soft-Off by PWR-BTN = Delay 4 Sec). Hold time: soft_off_ms in /etc/config/esptopcrsw',
+					send('power_hold', 'Hold the power button of ' + (dev.name || dev.mac) + ' to turn it off?')), ' ',
 				button('Force Off', 'cbi-button-reset', 'Long press of the power button - forces the PC off regardless of OS state',
 					send('power_off', 'Force power off the PC?')), ' ',
 				button('Reset', '', 'Short press of the reset button', send('reset', 'Reset the PC?'))
@@ -667,7 +716,19 @@ return view.extend({
 			E('style', {}, STYLE),
 			E('div', { 'style': 'display:flex;align-items:center;gap:12px' }, [
 				E('h2', { 'style': 'margin:0' }, 'ESPtoPC Wireless Remote Switch'),
-				button('Help', '', '', function () { window.alert(HELP_TEXT); })
+				button('Help', '', '', function () { window.alert(HELP_TEXT); }),
+				button('Settings', '', 'Power hold time for "Off (hold)"', function () {
+					callGetSettings().then(function (s) {
+						var v = window.prompt('Soft-Off hold time, seconds (0.5-10).\nBIOS delay + margin, e.g. 4.5 for "Delay 4 Sec":', s.soft_off_ms / 1000);
+						if (v === null) return;
+						var ms = Math.round(parseFloat(v.replace(',', '.')) * 1000);
+						if (isNaN(ms)) { window.alert('Enter a number, e.g. 4.5'); return; }
+						callSetSettings(String(ms)).then(function (res) {
+							if (res && res.error) window.alert(res.error);
+							else self.refreshTable();
+						}).catch(function (err) { window.alert(err.message || String(err)); });
+					});
+				})
 			]),
 			self.renderPending(data[2], data[1]),
 			tableWrap,
@@ -685,6 +746,7 @@ config settings 'settings'
 	option password 'poweron-esp01'
 	option offline_timeout '300'
 	option power_block_after_on '60'
+	option soft_off_ms '4500'
 CFG_EOF
 	echo "Created /etc/config/esptopcrsw with defaults"
 fi
@@ -752,7 +814,8 @@ cat > /usr/bin/esptopcrsw << 'CLI_EOF'
 #   esptopcrsw                     interactive menu (Enter = refresh)
 #   esptopcrsw list                list devices with status
 #   esptopcrsw poweron <name>      power on (or sleep, if PC already on)
-#   esptopcrsw off <name>          force power off
+#   esptopcrsw hold <name>         hold Power for the BIOS soft-off time (soft_off_ms, default 4.5 s)
+#   esptopcrsw off <name>          force power off (long hold)
 #   esptopcrsw reset <name>
 #   esptopcrsw check <name>        check connection to an offline device
 #   esptopcrsw lang [en|ru|uk]     show or change CLI language
@@ -781,6 +844,8 @@ prompt_lang|Choose language: 1) English  2) Русский  3) Українсь�
 action_check|Check connection|Проверить связь|Перевірити зв'язок
 action_poweron|Power On|Включить|Увімкнути
 action_poweron_sleep|Off / Sleep|Выключить / Сон|Вимкнути / Сон
+action_hold|Soft-Off|Мягкое выключение|М'яке вимкнення
+unit_sec|s|с|с
 action_off|Force Off|Принудительно выключить|Примусово вимкнути
 action_reset|Reset|Перезагрузить|Перезавантажити
 action_back|Back|Назад|Назад
@@ -861,9 +926,20 @@ find_device_line() {
 ubus_command() { ubus call esptopcrsw command "{\"mac\":\"$1\",\"action\":\"$2\"}" 2>/dev/null; }
 is_ok()        { echo "$1" | grep -Eq '"ok":[[:space:]]*true'; }
 
+# hold_label: "Soft-Off (4.5 s)", the time is taken from the current setting
+hold_label() {
+	local ms s
+	ms="$(ubus call esptopcrsw get_settings '{}' 2>/dev/null | jsonfilter -e '$.soft_off_ms')"
+	[ -n "$ms" ] || ms=4500
+	s="$(awk -v m="$ms" 'BEGIN { printf "%g", m / 1000 }')"
+	[ "$LANG_CODE" = en ] || s="$(echo "$s" | tr . ,)"
+	echo "$(t action_hold) ($s $(t unit_sec))"
+}
+
 action_label() {
 	case "$1" in
 		power_on) t action_poweron ;;
+		power_hold) hold_label ;;
 		power_off) t action_off ;;
 		reset) t action_reset ;;
 		*) echo "$1" ;;
@@ -964,9 +1040,10 @@ device_menu() {
 		else
 			echo "  1) $(t action_poweron_sleep)"
 		fi
-		echo "  2) $(t action_off)"
-		echo "  3) $(t action_reset)"
-		actions="power_on power_off reset"
+		echo "  2) $(hold_label)"
+		echo "  3) $(t action_off)"
+		echo "  4) $(t action_reset)"
+		actions="power_on power_hold power_off reset"
 	fi
 	echo "  0) $(t action_back)"
 	printf "> "
@@ -1039,14 +1116,15 @@ ESPtoPC Wireless Remote Switch - CLI
   esptopcrsw                     интерактивное меню (устройство -> действие)
   esptopcrsw list                 таблица устройств с текущим статусом
   esptopcrsw poweron <имя>        включить (или усыпить, если ПК уже включен)
-  esptopcrsw off <имя>            принудительно выключить
+  esptopcrsw softoff <имя>        мягкое выключение: удержать Power на время задержки BIOS (по умолчанию 4,5 с)
+  esptopcrsw off <имя>            принудительно выключить (долгое удержание)
   esptopcrsw reset <имя>          перезагрузить
   esptopcrsw check <имя>          проверить/восстановить связь с устройством
   esptopcrsw lang [en|ru|uk]      показать или сменить язык интерфейса
   esptopcrsw help                 эта справка
 
 <имя> - как задано в LuCI при добавлении устройства (или сам MAC-адрес).
-poweron/off/reset спрашивают подтверждение (y/N), прежде чем что-либо делать.
+poweron/hold/off/reset спрашивают подтверждение (y/N), прежде чем что-либо делать.
 HELP_RU
 			;;
 		uk)
@@ -1056,14 +1134,15 @@ ESPtoPC Wireless Remote Switch - CLI
   esptopcrsw                     інтерактивне меню (пристрій -> дія)
   esptopcrsw list                 таблиця пристроїв з поточним статусом
   esptopcrsw poweron <ім'я>       увімкнути (або приспати, якщо ПК вже увімкнено)
-  esptopcrsw off <ім'я>           примусово вимкнути
+  esptopcrsw softoff <ім'я>       м'яке вимкнення: утримати Power на час затримки BIOS (типово 4,5 с)
+  esptopcrsw off <ім'я>           примусово вимкнути (довге утримання)
   esptopcrsw reset <ім'я>         перезавантажити
   esptopcrsw check <ім'я>         перевірити/відновити зв'язок з пристроєм
   esptopcrsw lang [en|ru|uk]      показати або змінити мову інтерфейсу
   esptopcrsw help                 ця довідка
 
 <ім'я> - як задано в LuCI при додаванні пристрою (або сам MAC-адреса).
-poweron/off/reset питають підтвердження (y/N), перш ніж щось робити.
+poweron/hold/off/reset питають підтвердження (y/N), перш ніж щось робити.
 HELP_UK
 			;;
 		*)
@@ -1073,14 +1152,15 @@ ESPtoPC Wireless Remote Switch - CLI
   esptopcrsw                     interactive menu (pick device, then action)
   esptopcrsw list                 table of devices with live status
   esptopcrsw poweron <name>       power on (or sleep, if PC already on)
-  esptopcrsw off <name>           force power off
+  esptopcrsw softoff <name>       soft-off: hold Power for the BIOS delay (default 4.5 s)
+  esptopcrsw off <name>           force power off (long hold)
   esptopcrsw reset <name>         reset
   esptopcrsw check <name>         check/restore connection to a device
   esptopcrsw lang [en|ru|uk]      show or change interface language
   esptopcrsw help                 this text
 
 <name> is whatever you named the device in LuCI (or its MAC address).
-poweron/off/reset ask for a y/N confirmation before doing anything.
+poweron/hold/off/reset ask for a y/N confirmation before doing anything.
 HELP_EN
 			;;
 	esac
@@ -1089,6 +1169,7 @@ HELP_EN
 case "$1" in
 	list) cmd_list ;;
 	poweron) run_action "$2" power_on ;;
+	softoff|hold) run_action "$2" power_hold ;;
 	off) run_action "$2" power_off ;;
 	reset) run_action "$2" reset ;;
 	check) run_action "$2" check ;;

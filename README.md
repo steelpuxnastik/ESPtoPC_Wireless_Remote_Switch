@@ -88,6 +88,7 @@ Before flashing, edit near the top of the file:
 - `WIFI_SSID` / `WIFI_PASS` — your network;
 - `DEVICE_PASSWORD` — a shared password string. The board sends it to the router in the handshake (so the router knows it's one of yours), and it is also the seed of the per-device command key (see **Security** below). It must match `esptopcrsw.settings.password` on the router; the default `poweron-esp01` is already the same on both sides, so you don't have to change it;
 - `POWER_SHORT_MS = 300` - A short press of the Power button. The configured press duration setting should work in most cases;
+- `POWER_HOLD_MS  = 4500` - Hold the Power button for the BIOS "soft-off delay" (e.g. Gigabyte: *Soft-Off by PWR-BTN = Delay 4 Sec*: a short press only suspends the PC, holding the button for 4+ seconds turns it off). It is only a fallback: the router normally sends its own time, see **Soft-off hold time** below;
 - `POWER_LONG_MS  = 5000` - Long-press the Power button to force the system unit to shut down. The required duration of the press can vary significantly between different computers; if it does not work, you will need to experiment to find the right timing;
 - `RESET_SHORT_MS = 300` - A short press of the Reset button. The configured press duration setting should work in most cases;
 - `WIFI_RETRY_MS = 30000` - While the board is not connected to WiFi (for example, the router is still booting after a power outage), it retries the connection every 30 seconds, forever;
@@ -103,6 +104,7 @@ HTTP endpoints the board exposes (all require `?key=...`, see below):
 | Endpoint         | Effect                        |
 |-------------------|-------------------------------|
 | `GET /power/on`   | Short press of the power button |
+| `GET /power/hold[?ms=N]` | Hold the power button for `N` ms (default `POWER_HOLD_MS`; limited to 500–10000) |
 | `GET /power/off`  | Long press (force shutdown)   |
 | `GET /reset`      | Short press of the reset button |
 | `GET /status`     | `{"pc_status":"on"\|"off"}`   |
@@ -139,21 +141,35 @@ What it sets up:
 esptopcrsw                     # interactive menu, a convenient alternative to manual command entry
 esptopcrsw list                # table of devices + status
 esptopcrsw poweron <name>      # power on (or sleep, if already on)
-esptopcrsw off <name>          # force power off
+esptopcrsw hold <name>         # hold Power for the BIOS soft-off time (see below)
+esptopcrsw off <name>          # force power off (long hold)
 esptopcrsw reset <name>
 esptopcrsw check <name>        # check/restore connection
 esptopcrsw help                # show help (list of commands and hints)
 esptopcrsw lang [en|ru|uk]     # interface language (remembered)
 ```
 
-Any of `poweron` / `off` / `reset` asks for a one-letter confirmation first (`y/N`) naming the device and the action, so a stray keypress can't send a command to the wrong PC. If a device looks offline when you run a command, the CLI tries to reconnect first and reports what happened, instead of failing silently.
+Any of `poweron` / `hold` / `off` / `reset` asks for a one-letter confirmation first (`y/N`) naming the device and the action, so a stray keypress can't send a command to the wrong PC. If a device looks offline when you run a command, the CLI tries to reconnect first and reports what happened, instead of failing silently.
+
+### Soft-off hold time
+
+Power button actions, from shortest to longest: **Off / Sleep** (short press, what the PC does depends on its power settings), **Off (hold X s)** (hold for the BIOS soft-off delay), **Force Off** (long hold, `POWER_LONG_MS`), and **Reset**.
+
+If a short press does not shut the PC down (on Gigabyte boards the BIOS option *Soft-Off by PWR-BTN* set to *Delay 4 Sec* makes a short press only suspend it), use **Off (hold X s)**. `X` is set on the router, no reflashing needed:
+
+```sh
+uci set esptopcrsw.settings.soft_off_ms='4500'   # BIOS delay + a margin, in ms (500-10000)
+uci commit esptopcrsw
+```
+
+The default is 4500 ms (4 s BIOS delay + 0.5 s margin); the button label in LuCI shows the current value. Unlike the short press, this button is not blocked in the first minute after power-on.
 
 ### Security
 
 There's no login/password on the ESP's HTTP server itself — instead:
 
 - **Handshake** (ESP → router): the board POSTs its MAC and `DEVICE_PASSWORD` to the router on boot/periodically, so the router knows it's genuinely this project's firmware announcing itself. It only filters out random devices, and it is sent in plain text.
-- **Commands** (router → ESP): every `/power/on`, `/power/off`, `/reset`, `/status` call requires `?key=<12-hex-chars>`, computed as `md5(MAC:DEVICE_PASSWORD)` truncated to 12 characters — the same formula on both sides, so no separate secret needs to be distributed or synced per board. Each board gets a different key because its MAC is different. This stops a stray browser tab pointed at the board's IP from doing anything. It is **not** protection against someone who deliberately reads this repo (the formula and the default password are public), and it's **not encryption**: the key is part of the URL, so anyone sniffing the WiFi traffic can read it in plain text. Good enough for "don't let someone on the LAN poke it by accident", not meant to survive a hostile network. If you want more than the default, set your own string in `DEVICE_PASSWORD` in the firmware and in `uci set esptopcrsw.settings.password='...'` on the router.
+- **Commands** (router → ESP): every `/power/on`, `/power/hold`, `/power/off`, `/reset`, `/status` call requires `?key=<12-hex-chars>`, computed as `md5(MAC:DEVICE_PASSWORD)` truncated to 12 characters — the same formula on both sides, so no separate secret needs to be distributed or synced per board. Each board gets a different key because its MAC is different. This stops a stray browser tab pointed at the board's IP from doing anything. It is **not** protection against someone who deliberately reads this repo (the formula and the default password are public), and it's **not encryption**: the key is part of the URL, so anyone sniffing the WiFi traffic can read it in plain text. Good enough for "don't let someone on the LAN poke it by accident", not meant to survive a hostile network. If you want more than the default, set your own string in `DEVICE_PASSWORD` in the firmware and in `uci set esptopcrsw.settings.password='...'` on the router.
 
 ## Known rough edges
 
