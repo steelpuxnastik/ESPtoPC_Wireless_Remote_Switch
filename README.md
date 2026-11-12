@@ -180,4 +180,5 @@ There's no login/password on the ESP's HTTP server itself — instead:
 - MAC addresses are stored/compared uppercase throughout, to avoid the same device getting registered twice under different casing.
 
 ## To-Do-List
-- If problems with ESP bootloop while PC is turned on will be found, change LED+ line from GPIO2 to GPIO1, and BTN_ON from GPIO1 to GPIO2.
+- PCB variant based on ESP12E, that will be simpler in some areas in terms of harnessing components, plus it's protected by default from all the side effects that previously had to be addressed by monitoring the input from the PC's operating status pin. 
+- Create a simplified default pass-through connection for all connectors, plus the ability to connect to the power supply with just one 5Vsb wire.
