@@ -141,7 +141,7 @@ What it sets up:
 esptopcrsw                     # interactive menu, a convenient alternative to manual command entry
 esptopcrsw list                # table of devices + status
 esptopcrsw poweron <name>      # power on (or sleep, if already on)
-esptopcrsw hold <name>         # hold Power for the BIOS soft-off time (see below)
+esptopcrsw softoff <name>      # soft-off: hold Power for the BIOS delay (see below; `hold` is an alias)
 esptopcrsw off <name>          # force power off (long hold)
 esptopcrsw reset <name>
 esptopcrsw check <name>        # check/restore connection
@@ -149,13 +149,15 @@ esptopcrsw help                # show help (list of commands and hints)
 esptopcrsw lang [en|ru|uk]     # interface language (remembered)
 ```
 
-Any of `poweron` / `hold` / `off` / `reset` asks for a one-letter confirmation first (`y/N`) naming the device and the action, so a stray keypress can't send a command to the wrong PC. If a device looks offline when you run a command, the CLI tries to reconnect first and reports what happened, instead of failing silently.
+Any of `poweron` / `softoff` / `off` / `reset` asks for a one-letter confirmation first (`y/N`) naming the device and the action, so a stray keypress can't send a command to the wrong PC. If a device looks offline when you run a command, the CLI tries to reconnect first and reports what happened, instead of failing silently.
 
 ### Soft-off hold time
 
-Power button actions, from shortest to longest: **Off / Sleep** (short press, what the PC does depends on its power settings), **Off (hold X s)** (hold for the BIOS soft-off delay), **Force Off** (long hold, `POWER_LONG_MS`), and **Reset**.
+**Soft-Off is optional and aimed at Gigabyte boards.** Some Gigabyte BIOSes have *Soft-Off by PWR-BTN* (*Instant-Off* / *Delay 4 Sec*). With *Delay 4 Sec* a short press only suspends the PC, and a press held for 4 seconds shuts it down normally. If your board has no such option, you only need **Off / Sleep** and **Force Off**. The same action also covers any other case where the PC expects a Power press of a specific length: set that length as the hold time.
 
-If a short press does not shut the PC down (on Gigabyte boards the BIOS option *Soft-Off by PWR-BTN* set to *Delay 4 Sec* makes a short press only suspend it), use **Off (hold X s)**. `X` is set on the router, no reflashing needed:
+Power button actions, from shortest to longest: **Off / Sleep** (short press, what the PC does depends on its power settings), **Soft-Off (X s)** (hold for the BIOS soft-off delay), **Force Off** (long hold, `POWER_LONG_MS`), and **Reset**.
+
+If a short press does not shut the PC down (on Gigabyte boards the BIOS option *Soft-Off by PWR-BTN* set to *Delay 4 Sec* makes a short press only suspend it), use **Soft-Off (X s)**. `X` is set with the **Settings** button in LuCI (in seconds) or on the router, no reflashing needed:
 
 ```sh
 uci set esptopcrsw.settings.soft_off_ms='4500'   # BIOS delay + a margin, in ms (500-10000)

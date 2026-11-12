@@ -361,7 +361,7 @@ call_set_settings() {
 	local v
 	read_args
 	json_get_var v soft_off_ms
-	case "$v" in ''|*[!0-9]*) fail "number required (500-10000)"; return 1 ;; esac
+	case "$v" in ''|*[!0-9]*) fail "number required (0.5-10 s)"; return 1 ;; esac
 	{ [ "$v" -ge 500 ] && [ "$v" -le 10000 ]; } || { fail "allowed range: 0.5-10 s"; return 1; }
 	uci set "esptopcrsw.settings.soft_off_ms=$v"
 	uci commit esptopcrsw
@@ -484,6 +484,13 @@ var HELP_TEXT =
 	'above the table, if present) - add it with a name to start using it\n' +
 	'- If a device shows Offline, use "Check connection" - if that fails, ' +
 	'the board itself is unreachable (power/WiFi on its end)\n\n' +
+		'Power buttons:\n' +
+		'- Off / Sleep: short press, the result depends on the PC power settings\n' +
+		'- Soft-Off (X s): holds Power for a set time. Made for Gigabyte boards with BIOS ' +
+		'"Soft-Off by PWR-BTN = Delay 4 Sec" (a short press only sleeps, a press held for 4+ s ' +
+		'shuts down normally). Not needed on other boards; also usable for any case where ' +
+		'the PC needs a Power press of a custom length. Set the time with the Settings button\n' +
+		'- Force Off: long hold, cuts the power regardless of the OS\n\n' +
 	'Full build instructions, firmware and hardware files:\n' +
 	'https://github.com/steelpuxnastik/ESPtoPC_Wireless_Remote_Switch';
 
@@ -594,8 +601,9 @@ return view.extend({
 			var holdLabel = 'Soft-Off' + (dev.soft_off_ms ? ' (' + (dev.soft_off_ms / 1000) + ' s)' : '');
 			return [
 				sleepBtn, ' ',
-				button(holdLabel, '', 'Holds the power button for the "soft-off delay" set in BIOS ' +
-					'(Gigabyte: Soft-Off by PWR-BTN = Delay 4 Sec). Hold time: soft_off_ms in /etc/config/esptopcrsw',
+				button(holdLabel, '', 'Holds Power for a set time. Made for Gigabyte BIOS ' +
+					'"Soft-Off by PWR-BTN = Delay 4 Sec"; also for any PC that needs a Power press of a custom length. ' +
+					'Time: Settings button',
 					send('power_hold', 'Hold the power button of ' + (dev.name || dev.mac) + ' to turn it off?')), ' ',
 				button('Force Off', 'cbi-button-reset', 'Long press of the power button - forces the PC off regardless of OS state',
 					send('power_off', 'Force power off the PC?')), ' ',
@@ -717,7 +725,7 @@ return view.extend({
 			E('div', { 'style': 'display:flex;align-items:center;gap:12px' }, [
 				E('h2', { 'style': 'margin:0' }, 'ESPtoPC Wireless Remote Switch'),
 				button('Help', '', '', function () { window.alert(HELP_TEXT); }),
-				button('Settings', '', 'Power hold time for "Off (hold)"', function () {
+				button('Settings', '', 'Power hold time for "Soft-Off"', function () {
 					callGetSettings().then(function (s) {
 						var v = window.prompt('Soft-Off hold time, seconds (0.5-10).\nBIOS delay + margin, e.g. 4.5 for "Delay 4 Sec":', s.soft_off_ms / 1000);
 						if (v === null) return;
@@ -814,7 +822,7 @@ cat > /usr/bin/esptopcrsw << 'CLI_EOF'
 #   esptopcrsw                     interactive menu (Enter = refresh)
 #   esptopcrsw list                list devices with status
 #   esptopcrsw poweron <name>      power on (or sleep, if PC already on)
-#   esptopcrsw hold <name>         hold Power for the BIOS soft-off time (soft_off_ms, default 4.5 s)
+#   esptopcrsw softoff <name>      soft-off: hold Power for the BIOS delay (soft_off_ms, default 4.5 s); 'hold' is an alias
 #   esptopcrsw off <name>          force power off (long hold)
 #   esptopcrsw reset <name>
 #   esptopcrsw check <name>        check connection to an offline device
@@ -1117,6 +1125,7 @@ ESPtoPC Wireless Remote Switch - CLI
   esptopcrsw list                 таблица устройств с текущим статусом
   esptopcrsw poweron <имя>        включить (или усыпить, если ПК уже включен)
   esptopcrsw softoff <имя>        мягкое выключение: удержать Power на время задержки BIOS (по умолчанию 4,5 с)
+                                  (для BIOS Gigabyte «Soft-Off by PWR-BTN = Delay 4 Sec» и ПК, которому нужно нажатие Power особой длины)
   esptopcrsw off <имя>            принудительно выключить (долгое удержание)
   esptopcrsw reset <имя>          перезагрузить
   esptopcrsw check <имя>          проверить/восстановить связь с устройством
@@ -1124,7 +1133,7 @@ ESPtoPC Wireless Remote Switch - CLI
   esptopcrsw help                 эта справка
 
 <имя> - как задано в LuCI при добавлении устройства (или сам MAC-адрес).
-poweron/hold/off/reset спрашивают подтверждение (y/N), прежде чем что-либо делать.
+poweron/softoff/off/reset спрашивают подтверждение (y/N), прежде чем что-либо делать.
 HELP_RU
 			;;
 		uk)
@@ -1135,6 +1144,7 @@ ESPtoPC Wireless Remote Switch - CLI
   esptopcrsw list                 таблиця пристроїв з поточним статусом
   esptopcrsw poweron <ім'я>       увімкнути (або приспати, якщо ПК вже увімкнено)
   esptopcrsw softoff <ім'я>       м'яке вимкнення: утримати Power на час затримки BIOS (типово 4,5 с)
+                                  (для BIOS Gigabyte «Soft-Off by PWR-BTN = Delay 4 Sec» та ПК, якому потрібне натискання Power особливої довжини)
   esptopcrsw off <ім'я>           примусово вимкнути (довге утримання)
   esptopcrsw reset <ім'я>         перезавантажити
   esptopcrsw check <ім'я>         перевірити/відновити зв'язок з пристроєм
@@ -1142,7 +1152,7 @@ ESPtoPC Wireless Remote Switch - CLI
   esptopcrsw help                 ця довідка
 
 <ім'я> - як задано в LuCI при додаванні пристрою (або сам MAC-адреса).
-poweron/hold/off/reset питають підтвердження (y/N), перш ніж щось робити.
+poweron/softoff/off/reset питають підтвердження (y/N), перш ніж щось робити.
 HELP_UK
 			;;
 		*)
@@ -1153,6 +1163,7 @@ ESPtoPC Wireless Remote Switch - CLI
   esptopcrsw list                 table of devices with live status
   esptopcrsw poweron <name>       power on (or sleep, if PC already on)
   esptopcrsw softoff <name>       soft-off: hold Power for the BIOS delay (default 4.5 s)
+                                  (for Gigabyte BIOS "Soft-Off by PWR-BTN = Delay 4 Sec" and PCs that need a Power press of a custom length)
   esptopcrsw off <name>           force power off (long hold)
   esptopcrsw reset <name>         reset
   esptopcrsw check <name>         check/restore connection to a device
@@ -1160,7 +1171,7 @@ ESPtoPC Wireless Remote Switch - CLI
   esptopcrsw help                 this text
 
 <name> is whatever you named the device in LuCI (or its MAC address).
-poweron/hold/off/reset ask for a y/N confirmation before doing anything.
+poweron/softoff/off/reset ask for a y/N confirmation before doing anything.
 HELP_EN
 			;;
 	esac

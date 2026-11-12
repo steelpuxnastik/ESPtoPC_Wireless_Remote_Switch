@@ -17,6 +17,7 @@
  *   GET /power/on   - короткое нажатие Power.
  *   GET /power/hold - удержание Power заданное время (BIOS «Soft-Off by PWR-BTN: Delay N Sec»).
  *                     Время: ?ms=N (роутер берёт из UCI soft_off_ms), без параметра - POWER_HOLD_MS.
+ *                     Нужно для плат Gigabyte с такой опцией и для любых ПК, которым нужно нажатие Power особой длины.
  *   GET /power/off  - длинное удержание Power (принудительное выключение).
  *   GET /reset      - короткое нажатие Reset.
  *   GET /status     - {"pc_status":"on"|"off"}
