@@ -131,11 +131,14 @@ Re-running `deploy.sh` after an update is safe — it won't wipe devices you've 
 
 What it sets up:
 - LuCI page under **Services → ESPtoPC Wireless Remote Switch**: device table with live status (On / Off / Offline), buttons that adapt to state, add-device picker (from the router's DHCP client list or typed by hand), and a banner for boards that announced themselves but aren't saved yet (it has a Dismiss button; a dismissed board shows up again when it announces itself next time). **Initial setup and adding devices is carried out only in LuCI's ESPtoPC Wireless Remote Switch program page**;
-- `esptopcrsw` CLI (see below);
+- `esptopcrsw` CLI (see below; use it only after the setup in LuCI is done and checked);
 - A second `uhttpd` instance on port 8090 that receives the handshake/heartbeat from ESP boards;
 - `rpcd`/`ubus` backend (`/usr/libexec/rpcd/esptopcrsw`) that both the LuCI page and the CLI talk to.
 
 ### CLI
+
+> **Important:**
+> Use the CLI only after the program is set up in LuCI and you have checked that everything works as you expect: devices are added, the status is shown correctly, and the press times (the **Settings** button of each device) fit your PC. The CLI does not add devices or change settings, it only sends commands using what is configured in LuCI.
 
 ```sh
 esptopcrsw                     # interactive menu, a convenient alternative to manual command entry
