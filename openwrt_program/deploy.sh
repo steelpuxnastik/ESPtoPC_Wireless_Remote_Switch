@@ -76,14 +76,31 @@ reply_ok()  { json_init; json_add_boolean "ok" 1; json_dump; }
 # UCI "settings" section (call config_load first): setting NAME DEFAULT
 setting() { local v; config_get v settings "$1" "$2"; echo "$v"; }
 
-# How long "power_hold" holds the Power button, ms (UCI soft_off_ms, default 4500, clamped to 500..10000).
-# For BIOS "Soft-Off by PWR-BTN = Delay 4 Sec" (Gigabyte): hold time = BIOS delay + a margin.
-hold_ms() {
-	local v
-	v="$(setting soft_off_ms 4500)"
-	case "$v" in ''|*[!0-9]*) v=4500 ;; esac
-	[ "$v" -lt 500 ] && v=500
-	[ "$v" -gt 10000 ] && v=10000
+# Button press times (ms). Each is a UCI option: in a device section (this device only)
+# or in the "settings" section (all devices); built-in default otherwise.
+MS_NAMES="power_short_ms soft_off_ms force_off_ms reset_ms"
+
+# ms_limits NAME -> "DEFAULT MIN MAX" (the firmware clamps to the same ranges)
+ms_limits() {
+	case "$1" in
+		power_short_ms) echo "300 100 2000" ;;    # Off / Sleep: short Power press
+		soft_off_ms)    echo "4500 500 10000" ;;  # Soft-Off: BIOS "Soft-Off by PWR-BTN = Delay 4 Sec" + margin
+		force_off_ms)   echo "5000 1000 15000" ;; # Force Off: long Power hold
+		reset_ms)       echo "300 100 2000" ;;    # Reset press
+	esac
+}
+
+# ms_value SECTION NAME (call config_load first; SECTION may be empty):
+# device option -> "settings" option -> default, clamped to the allowed range
+ms_value() {
+	local sec="$1" name="$2" def min max v=""
+	set -- $(ms_limits "$name")
+	def="$1"; min="$2"; max="$3"
+	[ -n "$sec" ] && config_get v "$sec" "$name" ""
+	[ -n "$v" ] || config_get v settings "$name" ""
+	case "$v" in ''|*[!0-9]*) v="$def" ;; esac
+	[ "$v" -lt "$min" ] && v="$min"
+	[ "$v" -gt "$max" ] && v="$max"
 	echo "$v"
 }
 
@@ -208,17 +225,16 @@ rpc_list() {
 	decl rename_device mac name
 	decl remove_device mac
 	decl command mac action
-	decl get_settings
-	decl set_settings soft_off_ms
+	decl get_settings mac
+	decl set_settings mac power_short_ms soft_off_ms force_off_ms reset_ms
 	json_dump
 }
 
 call_list() {
-	local timeout window hold
+	local timeout window
 	config_load esptopcrsw
 	timeout="$(setting offline_timeout 300)"
 	window="$(setting power_block_after_on 60)"
-	hold="$(hold_ms)"
 
 	json_init
 	json_add_array "devices"
@@ -253,7 +269,7 @@ call_list() {
 		json_add_boolean "online" "$online"
 		json_add_string "pc_status" "$status"
 		json_add_boolean "power_blocked" "$blocked"
-		json_add_int "soft_off_ms" "$hold"
+		json_add_int "soft_off_ms" "$(ms_value "$section" soft_off_ms)"
 		json_close_object
 	}
 	config_foreach list_one device
@@ -350,26 +366,73 @@ call_remove_device() {
 	reply_ok
 }
 
+# get_settings [mac] -> global (defaults for all devices), effective (for this mac),
+# device (this device's own values, "" = not set)
 call_get_settings() {
+	local mac name v
+	read_args
+	json_get_var mac mac
 	config_load esptopcrsw
+	FOUND_SECTION=""
+	if [ -n "$mac" ]; then
+		find_section_by_mac "$mac"
+		[ -n "$FOUND_SECTION" ] || { fail "device not found"; return 1; }
+	fi
+
 	json_init
-	json_add_int "soft_off_ms" "$(hold_ms)"
+	json_add_object "global"
+	for name in $MS_NAMES; do json_add_int "$name" "$(ms_value "" "$name")"; done
+	json_close_object
+	json_add_object "effective"
+	for name in $MS_NAMES; do json_add_int "$name" "$(ms_value "$FOUND_SECTION" "$name")"; done
+	json_close_object
+	if [ -n "$FOUND_SECTION" ]; then
+		json_add_object "device"
+		for name in $MS_NAMES; do
+			config_get v "$FOUND_SECTION" "$name" ""
+			json_add_string "$name" "$v"
+		done
+		json_close_object
+	fi
 	json_dump
 }
 
+# set_settings [mac] POWER_SHORT_MS SOFT_OFF_MS FORCE_OFF_MS RESET_MS: with mac - for that device,
+# without - for all devices. An empty value removes the option (the default applies).
 call_set_settings() {
-	local v
+	local mac sec name v min max
 	read_args
-	json_get_var v soft_off_ms
-	case "$v" in ''|*[!0-9]*) fail "number required (0.5-10 s)"; return 1 ;; esac
-	{ [ "$v" -ge 500 ] && [ "$v" -le 10000 ]; } || { fail "allowed range: 0.5-10 s"; return 1; }
-	uci set "esptopcrsw.settings.soft_off_ms=$v"
+	json_get_var mac mac
+	config_load esptopcrsw
+	sec="settings"
+	if [ -n "$mac" ]; then
+		find_section_by_mac "$mac"
+		[ -n "$FOUND_SECTION" ] || { fail "device not found"; return 1; }
+		sec="$FOUND_SECTION"
+	fi
+
+	for name in $MS_NAMES; do
+		json_get_var v "$name"
+		[ -n "$v" ] || continue
+		case "$v" in *[!0-9]*) fail "$name: number required"; return 1 ;; esac
+		set -- $(ms_limits "$name")
+		min="$2"; max="$3"
+		{ [ "$v" -ge "$min" ] && [ "$v" -le "$max" ]; } || { fail "$name: allowed range $min-$max ms"; return 1; }
+	done
+	for name in $MS_NAMES; do
+		json_get_var v "$name"
+		if [ -n "$v" ]; then
+			uci set "esptopcrsw.$sec.$name=$v"
+		else
+			uci -q delete "esptopcrsw.$sec.$name"
+		fi
+	done
 	uci commit esptopcrsw
 	reply_ok
 }
 
 call_command() {
-	local mac action timeout window status url resp hold tmo=10
+	local mac action timeout window status url resp ms sec tmo
 
 	read_args
 	json_get_var mac mac
@@ -379,6 +442,8 @@ call_command() {
 	config_load esptopcrsw
 	timeout="$(setting offline_timeout 300)"
 	window="$(setting power_block_after_on 60)"
+	find_section_by_mac "$mac"
+	sec="$FOUND_SECTION"
 
 	# "check": try to reach the board right now; success also marks it online
 	if [ "$action" = "check" ]; then
@@ -410,9 +475,8 @@ call_command() {
 		power_hold)
 			# not blocked after power-on: holding the button is a deliberate action
 			[ "$status" = "on" ] || { fail "PC is already off"; return 1; }
-			hold="$(hold_ms)"
-			url="/power/hold?ms=$hold"
-			tmo=$((hold / 1000 + 6))
+			ms="$(ms_value "$sec" soft_off_ms)"
+			url="/power/hold?ms=$ms"
 			;;
 		power_off)
 			[ "$status" = "on" ] || { fail "PC is already off"; return 1; }
@@ -420,14 +484,16 @@ call_command() {
 			;;
 		reset)
 			[ "$status" = "on" ] || { fail "PC is off, nothing to reset"; return 1; }
-			url="/reset"
+			ms="$(ms_value "$sec" reset_ms)"
+			url="/reset?ms=$ms"
 			;;
 		*)
 			fail "unknown action"; return 1
 			;;
 	esac
 
-	# power_off / power_hold keep the button pressed and reply afterwards -> wait for them plus a margin
+	# the board replies after the button is released -> wait for the press plus a margin
+	tmo=$((ms / 1000 + 10))
 	resp="$(device_get "$mac" "$url" "$tmo")"
 	[ -n "$resp" ] || { fail "device did not confirm the command"; return 1; }
 
@@ -467,6 +533,7 @@ cat > /www/luci-static/resources/view/esptopcrsw.js << 'JS_EOF'
 'require view';
 'require poll';
 'require rpc';
+'require ui';
 
 // UI text is hard-coded in English on purpose (not wrapped in _()), so LuCI
 // does not swap it for a translation depending on the interface language.
@@ -489,7 +556,7 @@ var HELP_TEXT =
 		'- Soft-Off (X s): holds Power for a set time. Made for Gigabyte boards with BIOS ' +
 		'"Soft-Off by PWR-BTN = Delay 4 Sec" (a short press only sleeps, a press held for 4+ s ' +
 		'shuts down normally). Not needed on other boards; also usable for any case where ' +
-		'the PC needs a Power press of a custom length. Set the time with the Settings button\n' +
+		'the PC needs a Power press of a custom length. Set the times with the Settings buttons (for all devices or per device)\n' +
 		'- Force Off: long hold, cuts the power regardless of the OS\n\n' +
 	'Full build instructions, firmware and hardware files:\n' +
 	'https://github.com/steelpuxnastik/ESPtoPC_Wireless_Remote_Switch';
@@ -522,10 +589,64 @@ var callAdd         = declare('add_device', ['mac', 'name']);
 var callRename      = declare('rename_device', ['mac', 'name']);
 var callRemove      = declare('remove_device', ['mac']);
 var callCommand     = declare('command', ['mac', 'action']);
-var callGetSettings = declare('get_settings');
-var callSetSettings = declare('set_settings', ['soft_off_ms']);
+var callGetSettings = declare('get_settings', ['mac']);
+var callSetSettings = declare('set_settings', ['mac', 'power_short_ms', 'soft_off_ms', 'force_off_ms', 'reset_ms']);
 
 function reload() { location.reload(); }
+
+var SETTINGS_FIELDS = [
+	{ key: 'power_short_ms', label: 'Off / Sleep: short Power press', range: '0.1-2' },
+	{ key: 'soft_off_ms',    label: 'Soft-Off: Power hold for the BIOS delay', range: '0.5-10' },
+	{ key: 'force_off_ms',   label: 'Force Off: long Power hold', range: '1-15' },
+	{ key: 'reset_ms',       label: 'Reset: press', range: '0.1-2' }
+];
+
+function msToSec(ms) { return (ms === '' || ms == null) ? '' : String(ms / 1000); }
+
+// dev == null: settings for all devices; otherwise for this device only (empty field = use the setting for all)
+function openSettings(dev, onSaved) {
+	callGetSettings(dev ? dev.mac : '').then(function (s) {
+		var inputs = {};
+		var rows = SETTINGS_FIELDS.map(function (f) {
+			var input = E('input', {
+				'type': 'text', 'size': 6,
+				'value': msToSec(dev ? s.device[f.key] : s.global[f.key]),
+				'placeholder': dev ? msToSec(s.global[f.key]) : ''
+			});
+			inputs[f.key] = input;
+			return E('div', { 'style': 'margin:8px 0' }, [E('div', {}, f.label + ' (' + f.range + ' s)'), input, ' s']);
+		});
+
+		function save() {
+			var args = [dev ? dev.mac : ''];
+			for (var i = 0; i < SETTINGS_FIELDS.length; i++) {
+				var raw = inputs[SETTINGS_FIELDS[i].key].value.trim().replace(',', '.');
+				var ms = '';
+				if (raw !== '') {
+					ms = Math.round(parseFloat(raw) * 1000);
+					if (isNaN(ms)) { window.alert(SETTINGS_FIELDS[i].label + ': enter a number, e.g. 4.5'); return; }
+					ms = String(ms);
+				}
+				args.push(ms);
+			}
+			callSetSettings.apply(null, args).then(function (res) {
+				if (res && res.error) { window.alert(res.error); return; }
+				ui.hideModal();
+				onSaved();
+			}).catch(function (err) { window.alert(err.message || String(err)); });
+		}
+
+		ui.showModal(dev ? 'Settings: ' + (dev.name || dev.mac) : 'Settings: all devices', [
+			E('p', {}, dev ? 'Empty field = use the setting for all devices (grey hint).'
+			               : 'Used by every device without settings of its own. Empty field = built-in value.'),
+			E('div', {}, rows),
+			E('div', { 'class': 'right' }, [
+				E('button', { 'class': 'cbi-button', 'click': ui.hideModal }, 'Cancel'), ' ',
+				E('button', { 'class': 'cbi-button cbi-button-save', 'click': save }, 'Save')
+			])
+		]);
+	});
+}
 
 function button(label, cls, title, onClick) {
 	var attrs = { 'class': 'cbi-button' + (cls ? ' ' + cls : '') };
@@ -614,9 +735,13 @@ return view.extend({
 		return [E('span', {}, '-')];
 	},
 
-	renderManage: function (dev) {
-		return [
-			button('Rename', '', '', function () {
+ 	renderManage: function (dev) {
+		var self = this;
+ 		return [
+			button('Settings', '', 'Press times of this device', function () {
+				openSettings(dev, function () { self.refreshTable(); });
+			}), ' ',
+ 			button('Rename', '', '', function () {
 				var newName = window.prompt('New name', dev.name);
 				if (newName) callRename(dev.mac, newName).then(reload);
 			}), ' ',
@@ -725,17 +850,8 @@ return view.extend({
 			E('div', { 'style': 'display:flex;align-items:center;gap:12px' }, [
 				E('h2', { 'style': 'margin:0' }, 'ESPtoPC Wireless Remote Switch'),
 				button('Help', '', '', function () { window.alert(HELP_TEXT); }),
-				button('Settings', '', 'Power hold time for "Soft-Off"', function () {
-					callGetSettings().then(function (s) {
-						var v = window.prompt('Soft-Off hold time, seconds (0.5-10).\nBIOS delay + margin, e.g. 4.5 for "Delay 4 Sec":', s.soft_off_ms / 1000);
-						if (v === null) return;
-						var ms = Math.round(parseFloat(v.replace(',', '.')) * 1000);
-						if (isNaN(ms)) { window.alert('Enter a number, e.g. 4.5'); return; }
-						callSetSettings(String(ms)).then(function (res) {
-							if (res && res.error) window.alert(res.error);
-							else self.refreshTable();
-						}).catch(function (err) { window.alert(err.message || String(err)); });
-					});
+				button('Settings', '', 'Press times for all devices', function () {
+					openSettings(null, function () { self.refreshTable(); });
 				})
 			]),
 			self.renderPending(data[2], data[1]),
@@ -754,7 +870,10 @@ config settings 'settings'
 	option password 'poweron-esp01'
 	option offline_timeout '300'
 	option power_block_after_on '60'
+	option power_short_ms '300'
 	option soft_off_ms '4500'
+	option force_off_ms '5000'
+	option reset_ms '300'
 CFG_EOF
 	echo "Created /etc/config/esptopcrsw with defaults"
 fi
@@ -934,10 +1053,10 @@ find_device_line() {
 ubus_command() { ubus call esptopcrsw command "{\"mac\":\"$1\",\"action\":\"$2\"}" 2>/dev/null; }
 is_ok()        { echo "$1" | grep -Eq '"ok":[[:space:]]*true'; }
 
-# hold_label: "Soft-Off (4.5 s)", the time is taken from the current setting
+# hold_label MAC: "Soft-Off (4.5 s)", the time is taken from the current settings of that device
 hold_label() {
 	local ms s
-	ms="$(ubus call esptopcrsw get_settings '{}' 2>/dev/null | jsonfilter -e '$.soft_off_ms')"
+	ms="$(ubus call esptopcrsw get_settings "{\"mac\":\"$1\"}" 2>/dev/null | jsonfilter -e '$.effective.soft_off_ms')"
 	[ -n "$ms" ] || ms=4500
 	s="$(awk -v m="$ms" 'BEGIN { printf "%g", m / 1000 }')"
 	[ "$LANG_CODE" = en ] || s="$(echo "$s" | tr . ,)"
@@ -947,7 +1066,7 @@ hold_label() {
 action_label() {
 	case "$1" in
 		power_on) if [ "$2" = "on" ]; then t action_poweron_sleep; else t action_poweron; fi ;;
-		power_hold) hold_label ;;
+		power_hold) hold_label "$3" ;;
 		power_off) t action_off ;;
 		reset) t action_reset ;;
 		*) echo "$1" ;;
@@ -970,7 +1089,7 @@ run_action_by_mac() {
 
 	[ "$action" = "check" ] && return 0
 
-	printf "%s: %s -> %s? [y/N] " "$(t confirm_action)" "$dname" "$(action_label "$action" "$pcstatus")"
+	printf "%s: %s -> %s? [y/N] " "$(t confirm_action)" "$dname" "$(action_label "$action" "$pcstatus" "$mac")"
 	read -r confirm
 	case "$confirm" in
 		y|Y|yes|Yes) ;;
@@ -1048,7 +1167,7 @@ device_menu() {
 		else
 			echo "  1) $(t action_poweron_sleep)"
 		fi
-		echo "  2) $(hold_label)"
+		echo "  2) $(hold_label "$mac")"
 		echo "  3) $(t action_off)"
 		echo "  4) $(t action_reset)"
 		actions="power_on power_hold power_off reset"

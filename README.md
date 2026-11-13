@@ -88,8 +88,8 @@ Before flashing, edit near the top of the file:
 - `WIFI_SSID` / `WIFI_PASS` — your network;
 - `DEVICE_PASSWORD` — a shared password string. The board sends it to the router in the handshake (so the router knows it's one of yours), and it is also the seed of the per-device command key (see **Security** below). It must match `esptopcrsw.settings.password` on the router; the default `poweron-esp01` is already the same on both sides, so you don't have to change it;
 - `POWER_SHORT_MS = 300` - A short press of the Power button. The configured press duration setting should work in most cases;
-- `POWER_HOLD_MS  = 4500` - Hold the Power button for the BIOS "soft-off delay" (e.g. Gigabyte: *Soft-Off by PWR-BTN = Delay 4 Sec*: a short press only suspends the PC, holding the button for 4+ seconds turns it off). It is only a fallback: the router normally sends its own time, see **Soft-off hold time** below;
-- `POWER_LONG_MS  = 5000` - Long-press the Power button to force the system unit to shut down. The required duration of the press can vary significantly between different computers; if it does not work, you will need to experiment to find the right timing;
+- `POWER_SOFTOFF_MS  = 4500` - Hold the Power button for the BIOS "soft-off delay" (e.g. Gigabyte: *Soft-Off by PWR-BTN = Delay 4 Sec*: a short press only suspends the PC, holding the button for 4+ seconds turns it off). It is only a fallback: the router normally sends its own time, see **Button press times** below;
+- `POWER_FORCEOFF_MS = 5000` - Long-press the Power button to force the system unit to shut down. The required duration of the press can vary significantly between different computers; if it does not work, you will need to experiment to find the right timing;
 - `RESET_SHORT_MS = 300` - A short press of the Reset button. The configured press duration setting should work in most cases;
 - `WIFI_RETRY_MS = 30000` - While the board is not connected to WiFi (for example, the router is still booting after a power outage), it retries the connection every 30 seconds, forever;
 - `HANDSHAKE_INTERVAL_MS = 10000` - Once the board is on WiFi, until the OpenWrt app acknowledges it, it announces itself every 10 seconds;
@@ -103,10 +103,10 @@ HTTP endpoints the board exposes (all require `?key=...`, see below):
 
 | Endpoint         | Effect                        |
 |-------------------|-------------------------------|
-| `GET /power/on`   | Short press of the power button |
-| `GET /power/hold[?ms=N]` | Hold the power button for `N` ms (default `POWER_HOLD_MS`; limited to 500–10000) |
-| `GET /power/off`  | Long press (force shutdown)   |
-| `GET /reset`      | Short press of the reset button |
+| `GET /power/on[?ms=N]`   | Short press of the power button (default `POWER_SHORT_MS`; limited to 100–2000) |
+| `GET /power/hold[?ms=N]` | Hold the power button (default `POWER_SOFTOFF_MS`; limited to 500–10000) |
+| `GET /power/off[?ms=N]`  | Long press, force shutdown (default `POWER_FORCEOFF_MS`; limited to 1000–15000) |
+| `GET /reset[?ms=N]`      | Press of the reset button (default `RESET_SHORT_MS`; limited to 100–2000) |
 | `GET /status`     | `{"pc_status":"on"\|"off"}`   |
 
 All permission logic (e.g. "don't offer Reset while the PC is off") lives on the OpenWrt side, not in the firmware — the board just does what it's told and reports state.
@@ -151,20 +151,30 @@ esptopcrsw lang [en|ru|uk]     # interface language (remembered)
 
 Any of `poweron` / `softoff` / `off` / `reset` asks for a one-letter confirmation first (`y/N`) naming the device and the action, so a stray keypress can't send a command to the wrong PC. If a device looks offline when you run a command, the CLI tries to reconnect first and reports what happened, instead of failing silently.
 
-### Soft-off hold time
+### Button press times and Soft-Off
 
 **Soft-Off is optional and aimed at Gigabyte boards.** Some Gigabyte BIOSes have *Soft-Off by PWR-BTN* (*Instant-Off* / *Delay 4 Sec*). With *Delay 4 Sec* a short press only suspends the PC, and a press held for 4 seconds shuts it down normally. If your board has no such option, you only need **Off / Sleep** and **Force Off**. The same action also covers any other case where the PC expects a Power press of a specific length: set that length as the hold time.
 
-Power button actions, from shortest to longest: **Off / Sleep** (short press, what the PC does depends on its power settings), **Soft-Off (X s)** (hold for the BIOS soft-off delay), **Force Off** (long hold, `POWER_LONG_MS`), and **Reset**.
+Power button actions, from shortest to longest: **Off / Sleep** (short press, what the PC does depends on its power settings), **Soft-Off (X s)** (hold for the BIOS soft-off delay), **Force Off** (long hold, `POWER_FORCEOFF_MS`), and **Reset**.
 
 If a short press does not shut the PC down (on Gigabyte boards the BIOS option *Soft-Off by PWR-BTN* set to *Delay 4 Sec* makes a short press only suspend it), use **Soft-Off (X s)**. `X` is set with the **Settings** button in LuCI (in seconds) or on the router, no reflashing needed:
 
+All press times are set in LuCI, in seconds, no reflashing needed: the **Settings** button next to *Help* sets them for all devices, the **Settings** button in a device's *Manage* column sets them for that device only (an empty field means "use the setting for all devices"). The same options can be set with `uci`, for all devices or for one device section:
+
 ```sh
-uci set esptopcrsw.settings.soft_off_ms='4500'   # BIOS delay + a margin, in ms (500-10000)
+uci set esptopcrsw.settings.soft_off_ms='4500'      # all devices, ms
+uci set esptopcrsw.@device[0].soft_off_ms='6000'    # only the first device
 uci commit esptopcrsw
 ```
 
-The default is 4500 ms (4 s BIOS delay + 0.5 s margin); the button label in LuCI shows the current value. Unlike the short press, this button is not blocked in the first minute after power-on.
+| Option | Action | Default | Allowed, ms |
+|---|---|---|---|
+| `power_short_ms` | Off / Sleep (short Power press) | 300 | 100–2000 |
+| `soft_off_ms` | Soft-Off (Power hold for the BIOS delay) | 4500 | 500–10000 |
+| `force_off_ms` | Force Off (long Power hold) | 5000 | 1000–15000 |
+| `reset_ms` | Reset | 300 | 100–2000 |
+
+The Soft-Off button label in LuCI and in the CLI shows the current value for that device. Unlike the short press, this button is not blocked in the first minute after power-on.
 
 ### Security
 

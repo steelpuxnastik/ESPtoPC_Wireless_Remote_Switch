@@ -14,12 +14,12 @@
  * это особенность загрузчика ESP8266, а не этого скетча.
  *
  * HTTP-эндпоинты (без внутренних проверок — вся логика разрешений на OpenWrt):
- *   GET /power/on   - короткое нажатие Power.
+ *   GET /power/on[?ms=N]  - короткое нажатие Power.
  *   GET /power/hold - удержание Power заданное время (BIOS «Soft-Off by PWR-BTN: Delay N Sec»).
  *                     Время: ?ms=N (роутер берёт из UCI soft_off_ms), без параметра - POWER_HOLD_MS.
  *                     Нужно для плат Gigabyte с такой опцией и для любых ПК, которым нужно нажатие Power особой длины.
- *   GET /power/off  - длинное удержание Power (принудительное выключение).
- *   GET /reset      - короткое нажатие Reset.
+ *   GET /power/off[?ms=N] - длинное удержание Power (принудительное выключение).
+ *   GET /reset[?ms=N]     - короткое нажатие Reset.
  *   GET /status     - {"pc_status":"on"|"off"}
  *
  * Плюс: ESP сама стучится на OpenWrt-программу (POST /announce на шлюз,
@@ -63,12 +63,17 @@ uint32_t lastWifiRetryMs = 0;
 // материнке гарантированно триггерит hard power-off).
 // Для конкретной твоей мамки их стоит проверить и при необходимости
 // подправить - вынесены отдельными константами специально для этого.
-uint32_t POWER_SHORT_MS = 300;   // короткое нажатие Power -> включение
-uint32_t POWER_HOLD_MS  = 4500;  // удержание Power для BIOS «Delay 4 Sec» (4 с + запас), если роутер не передал ?ms=
-uint32_t POWER_LONG_MS  = 5000;  // удержание Power -> принудительное выключение
-const long POWER_HOLD_MIN_MS = 500;    // ?ms= ограничивается этим диапазоном
-const long POWER_HOLD_MAX_MS = 10000;
-uint32_t RESET_SHORT_MS = 300;   // короткое нажатие Reset
+// Значения по умолчанию: используются, если роутер не передал ?ms=N
+uint32_t POWER_SHORT_MS    = 300;   // короткое нажатие Power -> включение
+uint32_t POWER_SOFTOFF_MS  = 4500;  // удержание Power для BIOS «Delay 4 Sec» (4 с + запас)
+uint32_t POWER_FORCEOFF_MS = 5000;  // удержание Power -> принудительное выключение
+uint32_t RESET_SHORT_MS    = 300;   // короткое нажатие Reset
+
+// Допустимые границы ?ms= (те же, что на роутере)
+const long POWER_SHORT_MIN_MS    = 100,  POWER_SHORT_MAX_MS    = 2000;
+const long POWER_SOFTOFF_MIN_MS  = 500,  POWER_SOFTOFF_MAX_MS  = 10000;
+const long POWER_FORCEOFF_MIN_MS = 1000, POWER_FORCEOFF_MAX_MS = 15000;
+const long RESET_MIN_MS          = 100,  RESET_MAX_MS          = 2000;
 
 ESP8266WebServer server(80);
 
@@ -105,31 +110,40 @@ bool checkKey() {
   return true;
 }
 
+// Время нажатия: ?ms=N от роутера, ограниченное [minMs..maxMs]; без параметра - defMs
+uint32_t requestMs(uint32_t defMs, long minMs, long maxMs) {
+  long ms = server.hasArg("ms") ? server.arg("ms").toInt() : (long)defMs;
+  if (ms < minMs) ms = minMs;
+  if (ms > maxMs) ms = maxMs;
+  return (uint32_t)ms;
+}
+
 void handlePowerOn() {
   if (!checkKey()) return;
-  pressButton(PIN_POWER, POWER_SHORT_MS);
-  server.send(200, "text/plain", "Power short-press sent");
+  uint32_t ms = requestMs(POWER_SHORT_MS, POWER_SHORT_MIN_MS, POWER_SHORT_MAX_MS);
+  pressButton(PIN_POWER, ms);
+  server.send(200, "text/plain", String("Power short-press ") + String(ms) + " ms sent");
 }
 
 void handlePowerHold() {
   if (!checkKey()) return;
-  long ms = server.hasArg("ms") ? server.arg("ms").toInt() : (long)POWER_HOLD_MS;
-  if (ms < POWER_HOLD_MIN_MS) ms = POWER_HOLD_MIN_MS;
-  if (ms > POWER_HOLD_MAX_MS) ms = POWER_HOLD_MAX_MS;
-  pressButton(PIN_POWER, (uint32_t)ms);
-  server.send(200, "text/plain", String("Power hold ") + String(ms) + " ms sent");
+  uint32_t ms = requestMs(POWER_SOFTOFF_MS, POWER_SOFTOFF_MIN_MS, POWER_SOFTOFF_MAX_MS);
+  pressButton(PIN_POWER, ms);
+  server.send(200, "text/plain", String("Power soft-off hold ") + String(ms) + " ms sent");
 }
 
 void handlePowerOff() {
   if (!checkKey()) return;
-  pressButton(PIN_POWER, POWER_LONG_MS);
-  server.send(200, "text/plain", "Power long-press (force off) sent");
+  uint32_t ms = requestMs(POWER_FORCEOFF_MS, POWER_FORCEOFF_MIN_MS, POWER_FORCEOFF_MAX_MS);
+  pressButton(PIN_POWER, ms);
+  server.send(200, "text/plain", String("Power long-press (force off) ") + String(ms) + " ms sent");
 }
 
 void handleReset() {
   if (!checkKey()) return;
-  pressButton(PIN_RESET, RESET_SHORT_MS);
-  server.send(200, "text/plain", "Reset short-press sent");
+  uint32_t ms = requestMs(RESET_SHORT_MS, RESET_MIN_MS, RESET_MAX_MS);
+  pressButton(PIN_RESET, ms);
+  server.send(200, "text/plain", String("Reset press ") + String(ms) + " ms sent");
 }
 
 void handleStatus() {
