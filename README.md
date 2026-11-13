@@ -159,11 +159,10 @@ Power button actions, from shortest to longest: **Off / Sleep** (short press, wh
 
 If a short press does not shut the PC down (on Gigabyte boards the BIOS option *Soft-Off by PWR-BTN* set to *Delay 4 Sec* makes a short press only suspend it), use **Soft-Off (X s)**. `X` is set with the **Settings** button in LuCI (in seconds) or on the router, no reflashing needed:
 
-All press times are set in LuCI, in seconds, no reflashing needed: the **Settings** button next to *Help* sets them for all devices, the **Settings** button in a device's *Manage* column sets them for that device only (an empty field means "use the setting for all devices"). The same options can be set with `uci`, for all devices or for one device section:
+All press times are set per device in LuCI, in seconds, no reflashing needed: the **Settings** button in the device's *Manage* column (an empty field means the built-in value). The same options can be set with `uci` in the device section:
 
 ```sh
-uci set esptopcrsw.settings.soft_off_ms='4500'      # all devices, ms
-uci set esptopcrsw.@device[0].soft_off_ms='6000'    # only the first device
+uci set esptopcrsw.@device[0].soft_off_ms='6000'    # the first device, ms
 uci commit esptopcrsw
 ```
 
