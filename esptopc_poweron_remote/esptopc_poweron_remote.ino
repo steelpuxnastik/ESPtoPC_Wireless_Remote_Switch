@@ -1,17 +1,13 @@
 /*
- * ESP-01: удалённое управление кнопками Power/Reset ПК через HTTP.
+ * ESP-12E: удалённое управление кнопками Power/Reset ПК через HTTP.
  * -----------------------------------------------------------------
- * GPIO1 (TX)  -> затвор Q1 (Power button). LOW = кнопка нажата, HIGH = отпущена.
- * GPIO3 (RX)  -> затвор Q3 (Reset button). LOW = кнопка нажата, HIGH = отпущена.
- * GPIO2       -> вход, статус ПК: LOW = ПК включен, HIGH = ПК выключен.
- * GPIO0       -> затвор Q7 (ключ статуса). Обычно отпущен (INPUT, подтяжка R10 = HIGH,
- *                Q7 открыт, затвор Q5 на земле, GPIO2 не прижат). Опускается в LOW только
- *                на ~2 мс в pcIsOn(), чтобы Q5 мог показать статус на GPIO2.
+ * GPIO4  -> затвор Q1 (Power button), N-канальный. HIGH = кнопка нажата, LOW = отпущена.
+ * GPIO5  -> затвор Q2 (Reset button), N-канальный. HIGH = кнопка нажата, LOW = отпущена.
+ * GPIO13 -> вход, статус ПК через оптрон U3 (EL817): LOW = ПК включен, HIGH = ПК выключен.
+ *           Подтяжка к 3,3 В - R9 на плате.
+ * GPIO0, GPIO2, GPIO15 - только режим загрузки (подтяжки R3, R4, R5), прошивкой не используются.
  *
- * Serial отключен полностью: TX/RX заняты под кнопки, а мусор от
- * Arduino Serial.begin() поверх штатного ROM boot-лога только добавил бы риска.
- * Сам ROM boot-лог на TX (до старта setup()) программно не убрать -
- * это особенность загрузчика ESP8266, а не этого скетча.
+ * TX/RX свободны (разъём J2 для прошивки и отладки), Serial при желании можно включать.
  *
  * HTTP-эндпоинты (без внутренних проверок — вся логика разрешений на OpenWrt):
  *   GET /power/on[?ms=N]  - короткое нажатие Power.
@@ -37,11 +33,9 @@ const char* WIFI_SSID = "ВАШ_SSID";
 const char* WIFI_PASS = "ВАШ_ПАРОЛЬ";
 
 // ---- Пины ----
-const uint8_t PIN_POWER     = 1; // TX -> Q1 (Power)
-const uint8_t PIN_RESET     = 3; // RX -> Q3 (Reset)
-const uint8_t PIN_PC_STATUS = 2; // вход статуса ПК (LOW = ON)
-const uint8_t PIN_STATUS_EN = 0; // GPIO0 -> затвор Q7: LOW = статус на GPIO2 доступен; отпущен = защита
-const uint8_t STATUS_SETTLE_MS = 2; // время установления цепи Q5 после опускания GPIO0
+const uint8_t PIN_POWER     = 4;  // GPIO4  -> Q1 (Power), HIGH = нажато
+const uint8_t PIN_RESET     = 5;  // GPIO5  -> Q2 (Reset), HIGH = нажато
+const uint8_t PIN_PC_STATUS = 13; // GPIO13 <- оптрон U3 (LOW = ПК включён)
 
 
 // ---- OpenWrt: хендшейк/heartbeat ----
@@ -78,21 +72,14 @@ const long RESET_MIN_MS          = 100,  RESET_MAX_MS          = 2000;
 ESP8266WebServer server(80);
 
 bool pcIsOn() {
-  // GPIO0 в LOW только на время чтения, чтобы любой внезапный сброс
-  // почти наверняка застал его отпущенным (иначе ESP уйдёт в загрузчик).
-  pinMode(PIN_STATUS_EN, OUTPUT);
-  digitalWrite(PIN_STATUS_EN, LOW);
-  delay(STATUS_SETTLE_MS);
-  bool on = (digitalRead(PIN_PC_STATUS) == LOW);
-  pinMode(PIN_STATUS_EN, INPUT); // отпустить: R10 поднимает GPIO0, Q7 снова закрывает Q5
-  return on;
+  return digitalRead(PIN_PC_STATUS) == LOW; // оптрон открыт, пока светодиод питания ПК горит
 }
 
 void pressButton(uint8_t pin, uint32_t durationMs) {
-  digitalWrite(pin, LOW);
+  digitalWrite(pin, HIGH); // MOSFET открыт - кнопка замкнута
   delay(durationMs);
-  digitalWrite(pin, HIGH);
-}
+  digitalWrite(pin, LOW);  // отпущена
+ }
 
 String commandKey() {
   MD5Builder md5;
@@ -170,14 +157,13 @@ void sendAnnounce() {
 }
 
 void setup() {
-  // Кнопочные пины сразу в неактивное состояние (HIGH), до WiFi.
+  // Кнопочные пины сразу в неактивное состояние (LOW), до WiFi.
   pinMode(PIN_POWER, OUTPUT);
-  digitalWrite(PIN_POWER, HIGH);
+  digitalWrite(PIN_POWER, LOW);
   pinMode(PIN_RESET, OUTPUT);
-  digitalWrite(PIN_RESET, HIGH);
+  digitalWrite(PIN_RESET, LOW);
 
-  pinMode(PIN_STATUS_EN, INPUT); // GPIO0 отпущен: R10 держит HIGH, Q7 открыт
-  pinMode(PIN_PC_STATUS, INPUT); // внешний R8 уже подтягивает, INPUT_PULLUP не нужен
+  pinMode(PIN_PC_STATUS, INPUT); // внешний R9 уже подтягивает к 3,3 В, INPUT_PULLUP не нужен
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
