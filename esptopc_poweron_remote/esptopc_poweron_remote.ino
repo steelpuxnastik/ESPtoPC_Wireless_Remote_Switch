@@ -12,7 +12,7 @@
  * HTTP-эндпоинты (без внутренних проверок — вся логика разрешений на OpenWrt):
  *   GET /power/on[?ms=N]  - короткое нажатие Power.
  *   GET /power/hold - удержание Power заданное время (BIOS «Soft-Off by PWR-BTN: Delay N Sec»).
- *                     Время: ?ms=N (роутер берёт из UCI soft_off_ms), без параметра - POWER_HOLD_MS.
+ *                     Время: ?ms=N (роутер берёт из UCI soft_off_ms), без параметра - POWER_SOFTOFF_MS.
  *                     Нужно для плат Gigabyte с такой опцией и для любых ПК, которым нужно нажатие Power особой длины.
  *   GET /power/off[?ms=N] - длинное удержание Power (принудительное выключение).
  *   GET /reset[?ms=N]     - короткое нажатие Reset.

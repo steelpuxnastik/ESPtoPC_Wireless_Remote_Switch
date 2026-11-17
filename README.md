@@ -1,6 +1,6 @@
 # ESPtoPC Wireless Remote Switch
 
-Remote power-on / reset / force-shutdown for a desktop PC over WiFi, using an ESP-01 wired to the motherboard's front-panel header, plus an OpenWrt app (LuCI page + CLI) to manage one or more of these boards.
+Remote power-on / reset / force-shutdown for a desktop PC over WiFi, using an ESP-12E board plugged into the motherboard's front-panel header, plus an OpenWrt app (LuCI page + CLI) to manage one or more of these boards. A variant of the board for the ESP-01 module is kept in the **esp-01-variant** branch of this repository.
 
 Built for the case where a PC needs to be turned on remotely even after a power outage — before the OS is up, before Wake-on-LAN is usable — by literally pressing the physical power button in software.
 
@@ -11,9 +11,11 @@ Built for the case where a PC needs to be turned on remotely even after a power 
 │   ├── esptopc_poweron_remote_pcb.kicad_pro   KiCad project
 │   ├── esptopc_poweron_remote_pcb.kicad_pcb   Board layout
 │   ├── esptopc_poweron_remote_pcb.kicad_sch   Schematic
-│   └── esptopc_poweron_remote_pcb.kicad_prl   KiCad local project settings
+│   ├── esptopc_poweron_remote_pcb.kicad_prl   KiCad local project settings
+│   ├── pinout_lib.kicad_sym                   Symbol library (front-panel connector J1)
+│   └── pinout_lib.pretty/                     Footprint library (front-panel connector J1)
 ├── esptopc_poweron_remote/
-│   └── esptopc_poweron_remote.ino             ESP8266 (ESP-01) firmware
+│   └── esptopc_poweron_remote.ino             ESP8266 (ESP-12E) firmware
 └── openwrt_program/
     └── deploy.sh                              One-shot installer for the OpenWrt side:
                                                LuCI app + CLI tool + handshake listener
@@ -22,18 +24,18 @@ Built for the case where a PC needs to be turned on remotely even after a power 
 ## How it fits together
 
 ```
-[ESP-01 board]  --HTTP-->  [OpenWrt router]  <--LuCI/SSH--  [you]
+[ESP-12E board] --HTTP-->  [OpenWrt router]  <--LuCI/SSH--  [you]
    |    ^                     |
    |    |                     |-- LuCI page: device list, status, buttons
    |    `-- commands sent      -- CLI (`esptopcrsw`): menu + one-liners
    |        by OpenWrt         -- receives handshake/heartbeat from ESP
-   `-- wired to PC's
-       PWR_SW / RESET_SW
-       header + reads the
-       power-LED line
+   `-- plugged into the PC's
+       front-panel header,
+       presses PWR_SW / RESET_SW
+       and reads the power LED
 ```
 
-- The ESP-01 runs its own tiny HTTP server (power on / force off / reset / status) and also announces itself to the router (MAC + a fixed identifying string) so it shows up in LuCI ready to be named and saved.
+- The ESP-12E runs its own tiny HTTP server (power on / force off / reset / status) and also announces itself to the router (MAC + a fixed identifying string) so it shows up in LuCI ready to be named and saved.
 - The OpenWrt side is the "brain": it tracks device state, decides which buttons make sense to show (e.g. no point offering "Reset" on a PC that's already off), and is what you actually interact with — LuCI in a browser, or `esptopcrsw` over SSH.
 
 ## Hardware (KiCad project)
@@ -44,44 +46,72 @@ Built for the case where a PC needs to be turned on remotely even after a power 
 
 Open `esptopc_poweron_remote_pcb.kicad_pro` in KiCad. The board:
 
-- Regulates the PC's 5V standby rail down to 3.3V (AMS1117-3.3) to power the ESP-01;
-- Uses two small MOSFET pairs (PMOS+NMOS per line) so the ESP's GPIO1 (TX) and GPIO3 (RX) can pull the motherboard's **PWR_SW** and **RESET_SW** header pins low, exactly like pressing the physical buttons;
-- Reads the motherboard's power-LED line through a third MOSFET into GPIO2, to sense whether the PC is currently on (active-low: LOW = on);
-- Leaves GPIO0 completely unused/unconnected on purpose, to avoid accidentally dropping into the bootloader.
+- Regulates the PC's 5V standby rail down to 3.3V (AMS1117-3.3) to power the ESP-12E;
+- Uses two N-channel MOSFETs (Q1, Q2). When the ESP raises GPIO4 (Power) or GPIO5 (Reset) to HIGH, the transistor shorts the motherboard's **PWR_SW** or **RESET_SW** pin to ground, exactly like pressing the physical button. Pull-down resistors keep both transistors off while the ESP is starting;
+- Reads the motherboard's power-LED line through an optocoupler (EL817) into GPIO13, to sense whether the PC is currently on (active-low: LOW = on). The optocoupler isolates the PC from the ESP: the PC can never hold a pin low during boot, so the board starts reliably after a reset, a brown-out or a power outage;
+- Keeps the boot-mode pins at their standard levels with pull-up/pull-down resistors (GPIO0 and GPIO2 high, GPIO15 low). GPIO0 can be pulled to ground with jumper JP1 for flashing;
+- Has a 4-pin header J2 (TX, RX, GND, 3.3V) for flashing and debugging.
 
 ### List of required components for board assembly
 
 | Reference | Qty | Value | Footprint | Datasheet |
 | :--- | :--- | :--- | :--- | :--- |
-| **C1** | 1 | 22uF | Capacitor_Tantalum_SMD:CP_EIA-3528-21_Kemet-B_HandSolder | |
-| **C2** | 1 | 150uF | Capacitor_Tantalum_SMD:CP_EIA-6032-28_Kemet-C_HandSolder | |
-| **C3** | 1 | 100nF | Capacitor_SMD:C_1206_3216Metric_Pad1.33x1.80mm_HandSolder | |
-| **C4** | 1 | 1uF | Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder | |
-| **J1** | 1 | Conn_01x05_Pin | Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical | |
-| **Q1, Q3** | 2 | IRLML6402 | Package_TO_SOT_SMD:SOT-23_Handsoldering | |
-| **Q2, Q4, Q5** | 3 | IRLML2502 | Package_TO_SOT_SMD:SOT-23_Handsoldering | |
-| **R1, R2, R3, R4, R5, R6, R8, R9** | 8 | 10k | Resistor_SMD:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder | |
-| **R7** | 1 | 1k | Resistor_SMD:R_0805_2012Metric | |
-| **U1** | 1 | AMS1117-3.3 (fixed 3.3V version) | Package_TO_SOT_SMD:SOT-223-3_TabPin2 | [Datasheet](http://www.advanced-monolithic.com/pdf/ds1117.pdf) |
-| **U2** | 1 | ESP-01 | RF_Module:ESP-01 | [Datasheet](https://aithinker-static.oss-cn-shenzhen.aliyuncs.com/docs/_media_old/esp-01_product_specification_en.pdf) |
+| **C1, C5** | 2 | 1uF | Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder | |
+| **C2** | 1 | 22uF | Capacitor_Tantalum_SMD:CP_EIA-3528-21_Kemet-B_HandSolder | |
+| **C3** | 1 | 150uF | Capacitor_Tantalum_SMD:CP_EIA-6032-28_Kemet-C_HandSolder | |
+| **C4** | 1 | 100nF | Capacitor_SMD:C_1206_3216Metric_Pad1.33x1.80mm_HandSolder | |
+| **H1, H2** | 2 | MountingHole M3 | MountingHole:MountingHole_3.2mm_M3 | |
+| **J1** | 1 | 2x5 pin header (9 pins used) | pinout_lib:PinHeader_2x05_9pin_P2.54mm_Vertical | |
+| **J2** | 1 | 1x4 pin header | Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical | |
+| **JP1** | 1 | 1x2 pin header + jumper | Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical | |
+| **Q1, Q2** | 2 | IRLML2502 | Package_TO_SOT_SMD:SOT-23_Handsoldering | |
+| **R1, R2, R3, R4, R5, R6, R7** | 7 | 10k | Resistor_SMD:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder | |
+| **R8** | 1 | 330 | Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder | |
+| **R9** | 1 | 10k | Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder | |
+| **U1** | 1 | ESP-12E | RF_Module:ESP-12E | |
+| **U2** | 1 | AMS1117-3.3 (fixed 3.3V version) | Package_TO_SOT_SMD:SOT-223-3_TabPin2 | [Datasheet](http://www.advanced-monolithic.com/pdf/ds1117.pdf) |
+| **U3** | 1 | EL817 (optocoupler) | Package_DIP:DIP-4_W7.62mm | |
 
 ## Connection to PC
 
-Connector `J1` (5-pin) goes to the motherboard. Pinout as drawn in the schematic:
+Connector `J1` (2x5, 9 pins used) repeats the pin order of the standard 9-pin front-panel header of a motherboard:
 
-| J1 pin | Signal | Connect to |
+| J1 pin | Signal | Used for |
 | :--- | :--- | :--- |
-| 1 | LED+ | Power-LED (PLED+) pin of the motherboard's front-panel header |
-| 2 | RESET | Signal pin of the RESET_SW header (not the ground pin) |
-| 3 | POWER | Signal pin of the PWR_SW header (not the ground pin) |
-| 4 | GND | Ground |
-| 5 | +5V | +5V standby — must stay powered while the PC is off |
+| 1 | HD+ | not used by the board |
+| 2 | PLED+ | power-LED plus: read through the optocoupler |
+| 3 | HD- | not used by the board |
+| 4 | PLED- | power-LED minus: read through the optocoupler |
+| 5 | RES- | not used by the board (the reset button is closed to ground through Q2) |
+| 6 | PW+ | PWR_SW signal: closed to ground by Q1 |
+| 7 | RES+ | RESET_SW signal: closed to ground by Q2 |
+| 8 | PW- | ground of the PWR_SW header, also the ground of the whole board |
+| 9 | +5Vsb | +5V standby, powers the board: must stay powered while the PC is off |
 
-Front-panel header pinouts differ between motherboards, so check the manual of yours before connecting.
+Front-panel header pinouts differ between motherboards, so check the manual of yours before connecting. Many motherboards have nothing on the header pin that corresponds to `+5Vsb`: in that case connect J1 pin 9 with a wire to a +5V standby source (for example the 5VSB line of the ATX power connector). The ground comes from `PW-`, the other pins need no extra connection.
+
+Flashing connector `J2`: 
+
+| J2 pin | Signal |
+| :--- | :--- |
+| 1 | TX (board output: connect to the RX of the USB-UART adapter) |
+| 2 | RX (board input: connect to the TX of the USB-UART adapter) |
+| 3 | GND |
+| 4 | +3.3V |
+
+Jumper `JP1` ("Prog") pulls GPIO0 to ground. Close it **before** power-up to start the ESP in flash mode, and remove it after flashing.
 
 ## Firmware (`esptopc_poweron_remote.ino`)
 
-Flash with the Arduino IDE (ESP8266 core) via a USB-serial adapter. **TX/RX are used to drive the buttons**, so there's no Serial debug output. Flashing needs the special adapter, so you need to disconnect ESP-01 from the board first.
+Flash with the Arduino IDE (ESP8266 core, board "Generic ESP8266 Module") via a 3.3V USB-serial adapter connected to `J2` (see **Connection to PC**). Close jumper `JP1` before powering the board, remove it after flashing. Power the board either from the PC (`J1` pin 9) or from the adapter's 3.3V pin, not from both at once.
+
+Pins used by the firmware:
+
+| GPIO | Role | Level |
+| :--- | :--- | :--- |
+| GPIO4 | Power button (Q1) | HIGH = pressed, LOW = released |
+| GPIO5 | Reset button (Q2) | HIGH = pressed, LOW = released |
+| GPIO13 | PC state (optocoupler) | LOW = PC on, HIGH = PC off |
 
 Before flashing, edit near the top of the file:
 
@@ -95,7 +125,7 @@ Before flashing, edit near the top of the file:
 - `HANDSHAKE_INTERVAL_MS = 10000` - Once the board is on WiFi, until the OpenWrt app acknowledges it, it announces itself every 10 seconds;
 - `HEARTBEAT_INTERVAL_MS = 90000` - After the acknowledgment the board repeats the announcement every 90 seconds to show it is still alive.
 
-How the heartbeat is used: the router stores the time of the last announcement in RAM, continuously, whether or not anyone has the LuCI page open. A device is shown as Offline if nothing was heard from it for 5 minutes. The PC's on/off state does not come from the heartbeat — it is read live from the board when you open the page (and every 15 seconds while the page stays open). The only case with a wait is right after the router itself reboots: its RAM is empty, so a device shows as Offline until its next announcement (up to the heartbeat interval). A shorter `HEARTBEAT_INTERVAL_MS` shortens that wait.
+How the heartbeat is used: the router stores the time of the last announcement in RAM, continuously, whether or not anyone has the LuCI page open. A device is shown as Offline if nothing was heard from it for 5 minutes. The PC's on/off state does not come from the heartbeat — it is read from the board only when you ask for it: when you open the LuCI page, press **Refresh status**, press any action button, or go through the CLI menus. Nothing is polled in the background. The only case with a wait is right after the router itself reboots: its RAM is empty, so a device shows as Offline until its next announcement (up to the heartbeat interval). A shorter `HEARTBEAT_INTERVAL_MS` shortens that wait.
 
 The board finds the router automatically (`WiFi.gatewayIP()`, no IP to hardcode) and keeps retrying forever, so boot order after a power outage doesn't matter.
 
@@ -159,8 +189,6 @@ Any of `poweron` / `softoff` / `off` / `reset` asks for a one-letter confirmatio
 **Soft-Off is optional and aimed at Gigabyte boards.** Some Gigabyte BIOSes have *Soft-Off by PWR-BTN* (*Instant-Off* / *Delay 4 Sec*). With *Delay 4 Sec* a short press only suspends the PC, and a press held for 4 seconds shuts it down normally. If your board has no such option, you only need **Off / Sleep** and **Force Off**. The same action also covers any other case where the PC expects a Power press of a specific length: set that length as the hold time.
 
 Power button actions, from shortest to longest: **Off / Sleep** (short press, what the PC does depends on its power settings), **Soft-Off (X s)** (hold for the BIOS soft-off delay), **Force Off** (long hold, `POWER_FORCEOFF_MS`), and **Reset**.
-
-If a short press does not shut the PC down (on Gigabyte boards the BIOS option *Soft-Off by PWR-BTN* set to *Delay 4 Sec* makes a short press only suspend it), use **Soft-Off (X s)**. `X` is set with the **Settings** button in LuCI (in seconds) or on the router, no reflashing needed:
 
 All press times are set per device in LuCI, in seconds, no reflashing needed: the **Settings** button in the device's *Manage* column (an empty field means the built-in value). The same options can be set with `uci` in the device section:
 
