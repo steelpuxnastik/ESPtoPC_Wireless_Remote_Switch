@@ -523,7 +523,6 @@ chmod 0755 /usr/libexec/rpcd/esptopcrsw
 cat > /www/luci-static/resources/view/esptopcrsw.js << 'JS_EOF'
 'use strict';
 'require view';
-'require poll';
 'require rpc';
 'require ui';
 
@@ -828,19 +827,26 @@ return view.extend({
 	render: function (data) {
 		var self = this;
 		var tableWrap = E('div', {}, [self.renderTable(data[0])]);
+		var stamp = E('span', { 'style': 'opacity:0.7' }, 'Updated ' + new Date().toLocaleTimeString());
 
 		self.refreshTable = function () {
 			return callList().then(function (devices) {
 				tableWrap.firstChild.replaceWith(self.renderTable(devices));
+				stamp.textContent = 'Updated ' + new Date().toLocaleTimeString();
 			});
 		};
-		poll.add(self.refreshTable, 15);
 
 		return E('div', {}, [
 			E('style', {}, STYLE),
 			E('div', { 'style': 'display:flex;align-items:center;gap:12px' }, [
 				E('h2', { 'style': 'margin:0' }, 'ESPtoPC Wireless Remote Switch'),
-				button('Help', '', '', function () { window.alert(HELP_TEXT); })
+				button('Help', '', '', function () { window.alert(HELP_TEXT); }),
+				button('Refresh status', '', 'Ask the boards for the current state of their PCs', function (ev) {
+					var btn = ev.currentTarget;
+					btn.disabled = true;
+					self.refreshTable().finally(function () { btn.disabled = false; });
+				}),
+				stamp
 			]),
 			self.renderPending(data[2], data[1]),
 			tableWrap,
