@@ -1,0 +1,4 @@
+(sym_lib_table
+	(version 7)
+	(lib (name "pinout_lib") (type "KiCad") (uri "${KIPRJMOD}/pinout_lib.kicad_sym") (options "") (descr ""))
+)
