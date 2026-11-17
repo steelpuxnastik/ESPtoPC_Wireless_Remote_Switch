@@ -793,7 +793,7 @@
 			(uuid "2c692139-64ce-4b78-8d94-8f1d7cb4d8ad")
 		)
 		(embedded_fonts no)
-		(model "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x04_P2.54mm_Vertical.step"
+		(model "${KICAD10_3DMODEL_DIR}/Connector_PinSocket_2.54mm.3dshapes/PinSocket_1x04_P2.54mm_Vertical.step"
 			(offset
 				(xyz 0 0 0)
 			)
@@ -2048,7 +2048,7 @@
 			(uuid "8da7e1a8-6595-48b9-a611-e4ed1208b08d")
 		)
 		(embedded_fonts no)
-		(model "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x05_P2.54mm_Vertical.step"
+		(model "${KICAD10_3DMODEL_DIR}/Connector_PinSocket_2.54mm.3dshapes/PinSocket_1x05_P2.54mm_Vertical.step"
 			(offset
 				(xyz 0 0 0)
 			)
@@ -2059,7 +2059,7 @@
 				(xyz 0 0 0)
 			)
 		)
-		(model "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x04_P2.54mm_Vertical.step"
+		(model "${KICAD10_3DMODEL_DIR}/Connector_PinSocket_2.54mm.3dshapes/PinSocket_1x04_P2.54mm_Vertical.step"
 			(offset
 				(xyz 2.5 0 0)
 			)
@@ -6240,6 +6240,62 @@
 		(net "PLED+")
 		(uuid "eff36881-fc3a-4280-8abf-061ea87cf110")
 	)
+	(segment
+		(start 170.028 93.3181)
+		(end 170.2327 93.5228)
+		(width 1)
+		(layer "B.Cu")
+		(net "+5Vsb_PC")
+		(uuid "1bc4c8a8-c33c-48b9-96e0-7fcab03e01da")
+	)
+	(segment
+		(start 177.9066 87.4014)
+		(end 174.0408 87.4014)
+		(width 1)
+		(layer "B.Cu")
+		(net "+5Vsb_PC")
+		(uuid "31465bb9-5046-4e90-bdd3-09851545584d")
+	)
+	(segment
+		(start 170.028 90.2856)
+		(end 170.028 93.3181)
+		(width 1)
+		(layer "B.Cu")
+		(net "+5Vsb_PC")
+		(uuid "3cf6fc5a-48ac-4c6a-9939-1b8d3dc2b0cc")
+	)
+	(segment
+		(start 174.0408 87.4014)
+		(end 172.466 88.9762)
+		(width 1)
+		(layer "B.Cu")
+		(net "+5Vsb_PC")
+		(uuid "75dbd9cb-355e-41e2-8755-9cbd1b979cc3")
+	)
+	(segment
+		(start 172.466 92.2528)
+		(end 171.196 93.5228)
+		(width 1)
+		(layer "B.Cu")
+		(net "+5Vsb_PC")
+		(uuid "7a7c0331-8254-4545-b2b7-c974482178f5")
+	)
+	(segment
+		(start 172.466 88.9762)
+		(end 172.466 92.2528)
+		(width 1)
+		(layer "B.Cu")
+		(net "+5Vsb_PC")
+		(uuid "86473db5-4109-4c05-97cc-fe258ab7f561")
+	)
+	(segment
+		(start 171.196 93.5228)
+		(end 170.2327 93.5228)
+		(width 1)
+		(layer "B.Cu")
+		(net "+5Vsb_PC")
+		(uuid "f68d324a-15c4-4816-a7f8-8360d882b144")
+	)
 	(via
 		(at 142.9 102.61)
 		(size 1)
@@ -6375,62 +6431,6 @@
 		(layer "B.Cu")
 		(net "Net-(U1-GPIO2)")
 		(uuid "ab505508-cd87-47c1-9645-3ebc719a8782")
-	)
-	(segment
-		(start 170.028 93.3181)
-		(end 170.2327 93.5228)
-		(width 1)
-		(layer "B.Cu")
-		(net "+5Vsb_PC")
-		(uuid "1bc4c8a8-c33c-48b9-96e0-7fcab03e01da")
-	)
-	(segment
-		(start 177.9066 87.4014)
-		(end 174.0408 87.4014)
-		(width 1)
-		(layer "B.Cu")
-		(net "+5Vsb_PC")
-		(uuid "31465bb9-5046-4e90-bdd3-09851545584d")
-	)
-	(segment
-		(start 170.028 90.2856)
-		(end 170.028 93.3181)
-		(width 1)
-		(layer "B.Cu")
-		(net "+5Vsb_PC")
-		(uuid "3cf6fc5a-48ac-4c6a-9939-1b8d3dc2b0cc")
-	)
-	(segment
-		(start 174.0408 87.4014)
-		(end 172.466 88.9762)
-		(width 1)
-		(layer "B.Cu")
-		(net "+5Vsb_PC")
-		(uuid "75dbd9cb-355e-41e2-8755-9cbd1b979cc3")
-	)
-	(segment
-		(start 172.466 92.2528)
-		(end 171.196 93.5228)
-		(width 1)
-		(layer "B.Cu")
-		(net "+5Vsb_PC")
-		(uuid "7a7c0331-8254-4545-b2b7-c974482178f5")
-	)
-	(segment
-		(start 172.466 88.9762)
-		(end 172.466 92.2528)
-		(width 1)
-		(layer "B.Cu")
-		(net "+5Vsb_PC")
-		(uuid "86473db5-4109-4c05-97cc-fe258ab7f561")
-	)
-	(segment
-		(start 171.196 93.5228)
-		(end 170.2327 93.5228)
-		(width 1)
-		(layer "B.Cu")
-		(net "+5Vsb_PC")
-		(uuid "f68d324a-15c4-4816-a7f8-8360d882b144")
 	)
 	(zone
 		(net "PW-")
