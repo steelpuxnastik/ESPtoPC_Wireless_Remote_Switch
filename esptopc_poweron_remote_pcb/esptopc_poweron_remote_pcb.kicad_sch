@@ -3027,6 +3027,16 @@
 	)
 	(wire
 		(pts
+			(xy 219.71 93.98) (xy 228.6 93.98)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0a4128c1-acfb-4df3-8ae6-164f861db7ee")
+	)
+	(wire
+		(pts
 			(xy 17.78 35.56) (xy 19.05 35.56)
 		)
 		(stroke
@@ -3800,6 +3810,30 @@
 		(uuid "60745f4b-5932-4da0-8f60-e61a41d62923")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 234.5653 43.18 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+	)
+	(global_label "RES-"
+		(shape input)
+		(at 219.71 93.98 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "6e48396c-2cd7-4436-927f-c6e309e0e3a5")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 211.5239 93.98 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4856,6 +4890,85 @@
 			(project "esptopc_poweron_remote_pcb"
 				(path "/124f17f5-1e90-49a5-902e-e2a2bab466e7"
 					(reference "#PWR011")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 228.6 93.98 90)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "48a2cc0b-b103-4e2f-807a-e5bc54406b68")
+		(property "Reference" "#PWR021"
+			(at 234.95 93.98 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 232.41 93.9799 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" ""
+			(at 228.6 93.98 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 228.6 93.98 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 228.6 93.98 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "243dc4e6-07b2-4562-b5d8-8cf7f739cb8b")
+		)
+		(instances
+			(project "esptopc_poweron_remote_pcb"
+				(path "/124f17f5-1e90-49a5-902e-e2a2bab466e7"
+					(reference "#PWR021")
 					(unit 1)
 				)
 			)

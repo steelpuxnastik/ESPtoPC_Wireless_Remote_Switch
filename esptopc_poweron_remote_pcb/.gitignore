@@ -4,3 +4,5 @@
 *.bck
 github-cache/
 *-backups/
+*.zip
+*.rar

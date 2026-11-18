@@ -74,6 +74,13 @@ Open `esptopc_poweron_remote_pcb.kicad_pro` in KiCad. The board:
 
 ## Connection to PC
 
+For through-connection of buttons to the motherboard, so that it would be possible not only to use the device to turn on the computer, but also, as before, to use the buttons, I recommend to use, for example, this type of DuPont splitter, you can find it on aliexpress or somewhere else.
+
+![example of splitter-cable that required for connection](pictures/splitter_annotated.png)
+
+You'll need, at least, 4 (four) of those cables for connection of all buttons and LED's for standard variant of connection. In computer cases where fewer buttons and LEDs are used, it is possible to use fewer of them so that you can connect only what you need.
+As shown on picture, you need connect all wires exactly as it needs, even more, **you absolutely cannot make a mistake when connecting the button contacts PW+/- and RES+/- from the motherboard to the device, because the device is active component, and incorrect polarity will couse in a short circuit.** Same with LEDs. When connecting real buttons with pass-through connection, you don't have to observe polarity, as the buttons are passive components and have no polarity. But LEDs still needs to be properly connected. So I recommend double check all wires before turning on computer. If you have any doubts, I recommend that before connecting, you **apply the appropriate marks to all ends of the splitter**, similar to those present on the corresponding cables of the computer case (I made [special helper marking to print](print/connector_labels.pdf), so you can glue it to your connectors). Then you make sure that everything is applied correctly by checking everything with a multimeter or simply look at which wires go where and connect everything in accordance with your markings. (remind me to add example photos of applying those markings)
+
 Connector `J1` (2x5, 9 pins used) repeats the pin order of the standard 9-pin front-panel header of a motherboard:
 
 | J1 pin | Signal | Used for |
