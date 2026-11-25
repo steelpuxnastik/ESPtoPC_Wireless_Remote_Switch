@@ -79,17 +79,31 @@ For through-connection of buttons to the motherboard, so that it would be possib
 ![example of splitter-cable that required for connection](pictures/splitter_annotated.png)
 
 You'll need, at least, 4 (four) of those cables for connection of all buttons and LED's for standard variant of connection. In computer cases where fewer buttons and LEDs are used, it is possible to use fewer of them so that you can connect only what you need.
-As shown on picture, you need connect all wires exactly as it needs, even more, **you absolutely cannot make a mistake when connecting the button contacts PW+/- and RES+/- from the motherboard to the device, because the device is active component, and incorrect polarity will couse in a short circuit.** Same with LEDs. When connecting real buttons with pass-through connection, you don't have to observe polarity, as the buttons are passive components and have no polarity. But LEDs still needs to be properly connected. So I recommend double check all wires before turning on computer. If you have any doubts, I recommend that before connecting, you **apply the appropriate marks to all ends of the splitter**, similar to those present on the corresponding cables of the computer case (I made [special helper marking to print](print/connector_labels.pdf), so you can glue it to your connectors). Then you make sure that everything is applied correctly by checking everything with a multimeter or simply look at which wires go where and connect everything in accordance with your markings. (remind me to add example photos of applying those markings)
+As shown on picture, you need connect all wires exactly as it needs, even more, **you absolutely cannot make a mistake when connecting the button contacts PW+/- and RES+/- from the motherboard to the device, because the device is active component, and incorrect polarity will couse in a short circuit.** Same with LEDs. When connecting real buttons with pass-through connection, you don't have to observe polarity, as the buttons are passive components and have no polarity. But LEDs still needs to be properly connected. So I recommend double check all wires before turning on computer. If you have any doubts, I recommend that before connecting, you **apply the appropriate marks to all ends of the splitter**, similar to those present on the corresponding cables of the computer case (I made [special helper marking to print](print/connector_labels.pdf), so you can glue it to your connectors). Then you make sure that everything is applied correctly by checking everything with a multimeter or simply look at which wires go where and connect everything in accordance with your markings.
+
+![example of how to glue helper markings on splitter](pictures/photo_2026-11-19_12-12-08.jpg)
+![example of how to glue helper markings on splitter](pictures/photo_2026-11-19_12-12-13.jpg)
+
+You can see on pictures, that variant of marking that used on female end of splitter is opposite (mirrored) polarity relative to the other ends. You can verify this with a multimeter, and you must verify this to ensure everything will be connected correctly. And you can use it as simple fast rule: 
+1. decide what marking you need for female side with it's polarity;
+2. use mirrored polarity marking for male ends of splitter;
+3. verify with multimeter that polarity is right on ends and matches the markings you applied.
+
+Also, as `J1` and `J2` I recommend not to search some special forms of sockets, but only to get this single row 1x40 of DuPont socket and just cut exactly count of pins you need from and and solder it. Yes, it will be a little scratched where it's cut, but it will work just fine. You can carefully file down the rough edges, but I wouldn't go to that much trouble for something as trivial as that.
+
+In case of `J1` I recommend to cut 4pin-row, then 5pin-row, insert both of these rows simultaneously into the solder holes, align them (though they'll likely fit and align themselves without any problem, it's best to ensure there are no uneven areas or excess space), and only then solder them. As a result of all these not-so-tricky manipulations, we generally save significantly on the connections, which individually can cost significantly more than desired.
+
+![example of socket I recommend to use](pictures/photo_2026-11-25_09-53-32.jpg)
 
 Connector `J1` (2x5, 9 pins used) repeats the pin order of the standard 9-pin front-panel header of a motherboard:
 
 | J1 pin | Signal | Used for |
 | :--- | :--- | :--- |
-| 1 | HD+ | not used by the board |
+| 1 | HD+ | HDD LED plus: not used by the board, passed through to the case HDD LED |
 | 2 | PLED+ | power-LED plus: read through the optocoupler |
-| 3 | HD- | not used by the board |
+| 3 | HD- | HDD LED minus: not used by the board, passed through to the case HDD LED |
 | 4 | PLED- | power-LED minus: read through the optocoupler |
-| 5 | RES- | not used by the board (the reset button is closed to ground through Q2) |
+| 5 | RES- | ground of the RESET_SW header, also the ground of the whole board |
 | 6 | PW+ | PWR_SW signal: closed to ground by Q1 |
 | 7 | RES+ | RESET_SW signal: closed to ground by Q2 |
 | 8 | PW- | ground of the PWR_SW header, also the ground of the whole board |
@@ -167,7 +181,7 @@ sh deploy.sh
 Re-running `deploy.sh` after an update is safe — it won't wipe devices you've already added (`/etc/config/esptopcrsw` is only created if missing).
 
 What it sets up:
-- LuCI page under **Services → ESPtoPC Wireless Remote Switch**: device table with live status (On / Off / Offline), buttons that adapt to state, add-device picker (from the router's DHCP client list or typed by hand), and a banner for boards that announced themselves but aren't saved yet (it has a Dismiss button; a dismissed board shows up again when it announces itself next time). **Initial setup and adding devices is carried out only in LuCI's ESPtoPC Wireless Remote Switch program page**;
+- LuCI page under **Services → ESPtoPC Wireless Remote Switch**: device table with status (On / Off / Offline) read on demand (when the page opens, on the **Refresh status** button and after each action; no background polling), buttons that adapt to state, a **Settings** button for per-device press times, add-device picker (from the router's DHCP client list or typed by hand), and a banner for boards that announced themselves but aren't saved yet (it has a Dismiss button; a dismissed board shows up again when it announces itself next time). **Initial setup and adding devices is carried out only in LuCI's ESPtoPC Wireless Remote Switch program page**;
 - `esptopcrsw` CLI (see below; use it only after the setup in LuCI is done and checked);
 - A second `uhttpd` instance on port 8090 that receives the handshake/heartbeat from ESP boards;
 - `rpcd`/`ubus` backend (`/usr/libexec/rpcd/esptopcrsw`) that both the LuCI page and the CLI talk to.
